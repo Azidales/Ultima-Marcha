@@ -50,7 +50,8 @@ func _run() -> void:
 	print("CARD FLOW STEP 5 opening rewards")
 	game._set_screen("reward")
 	game.reward_picks_left = 1
-	game.cards = [Cards.CATALOG[14].duplicate(true)]
+	game.cards.clear()
+	game.cards.append(Cards.CATALOG[14].duplicate(true))
 	print("CARD FLOW STEP 6 taking reward")
 	game._choose(game.cards[0])
 	if game.passives.size() != 1 or game.screen != "map":
