@@ -1,0 +1,32 @@
+name: Android APK (debug)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container:
+      image: barichello/godot-ci:4.5.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot import
+        run: godot --headless --path . --editor --import --quit
+      - name: Check scene loads
+        run: godot --headless --path . --quit-after 3
+      - name: Verify race simulation
+        run: godot --headless --path . --script res://tests/smoke_test.gd
+      - name: Build Android APK
+        run: |
+          mkdir -p build
+          godot --headless --path . --export-debug Android build/UltimaMarcha-debug.apk
+          test -s build/UltimaMarcha-debug.apk
+      - name: Publish APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UltimaMarcha-Android-debug
+          path: build/UltimaMarcha-debug.apk
+          retention-days: 30
+          if-no-files-found: error
