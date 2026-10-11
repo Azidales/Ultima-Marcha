@@ -2,19 +2,10 @@ extends Node3D
 
 const Race = preload("res://scripts/simulation.gd")
 const Campaign = preload("res://scripts/campaign.gd")
+const Cards = preload("res://scripts/cards.gd")
 const Pilot = preload("res://scripts/pilot.gd")
 const Framing = preload("res://scripts/camera_framing.gd")
 const COLORS = {"bg":Color("111927"),"panel":Color("19283b"),"accent":Color("52dfd0"),"white":Color("f5f7fb"),"dim":Color("b1c3d3")}
-const CARDS = [
-	{"name":"Turbo de Rua","slot":"Turbo","type":"part","accel":0.19,"cool":-0.10,"desc":"+19% aceleracao; aumenta o calor"},
-	{"name":"Pneus Slick","slot":"Pneus","type":"part","grip":0.28,"desc":"+28% aderencia"},
-	{"name":"Cambio Curto","slot":"Cambio","type":"part","accel":0.17,"top":-0.06,"desc":"+17% aceleracao; -6% final"},
-	{"name":"Radiador Pro","slot":"Refrigeracao","type":"part","cool":0.40,"desc":"+40% refrigeracao"},
-	{"name":"Aerofolio","slot":"Aerodinamica","type":"part","grip":0.13,"top":0.03,"desc":"+13% aderencia; +3% final"},
-	{"name":"Mapa Agressivo","type":"passive","accel":0.08,"desc":"+8% aceleracao permanente"},
-	{"name":"Tecnica de Curvas","type":"passive","grip":0.08,"desc":"+8% aderencia permanente"},
-	{"name":"Escapamento Livre","type":"passive","top":0.07,"desc":"+7% velocidade maxima"}
-]
 var sim = Race.new()
 var campaign = Campaign.new()
 var pilot = Pilot.new()
@@ -149,14 +140,7 @@ func _process(delta: float) -> void:
 		heat_text.text = "CALOR: %d%%  |  Rival: %.0f m" % [roundi(sim.heat),sim.progress_rival-sim.progress_player]
 
 func _stats() -> Dictionary:
-	var result := {"accel":1.0,"grip":1.0,"top":1.0,"cool":1.0}
-	for item in equipped.values():
-		for key in result.keys():
-			result[key] += float(item.get(key,0.0))
-	for item in passives:
-		for key in result.keys():
-			result[key] += float(item.get(key,0.0))
-	return result
+	return Cards.calculate(equipped, passives)
 
 func _new_run() -> void:
 	if pilot.running:
@@ -187,11 +171,8 @@ func _after_victory() -> void:
 
 func _start_reward() -> void:
 	reward_picks_left = campaign.reward_count(selected_route)
-	cards.clear()
-	var pool: Array = CARDS.duplicate(true)
-	pool.shuffle()
-	for i in range(mini(pool.size(), 4 if reward_picks_left == 2 else 3)):
-		cards.append(pool[i])
+	var offer_count: int = 4 if reward_picks_left == 2 else 3
+	cards = Cards.draw(rng, offer_count, str(selected_route.get("kind","normal")), inventory, passives)
 	_set_screen("reward")
 
 func _race_start() -> void:
@@ -257,6 +238,8 @@ func _set_pilot_style(value: String) -> void:
 func _choose(card: Dictionary) -> void:
 	if screen != "reward" or reward_picks_left <= 0 or card not in cards:
 		return
+	if not Cards.can_take(card, inventory, passives):
+		return
 	if str(card.get("type"))=="part":
 		var owned: Dictionary = card.duplicate(true)
 		inventory.append(owned)
@@ -277,6 +260,15 @@ func _unequip(slot: String) -> void:
 	_draw_ui()
 
 func _equip(card: Dictionary) -> void:
+	if screen != "garage" or str(card.get("type","")) != "part":
+		return
+	var owned := false
+	for part in inventory:
+		if str(part.get("id", "")) == str(card.get("id", "")):
+			owned = true
+			break
+	if not owned or str(card.get("slot","")) not in Cards.SLOTS:
+		return
 	equipped[str(card["slot"])] = card
 	_draw_ui()
 
@@ -407,16 +399,35 @@ func _draw_ui() -> void:
 		body.add_child(_label("A arvore de habilidades fica bloqueada durante a tentativa.",16,COLORS["dim"]))
 		var s := _stats()
 		body.add_child(_label("ACEL: %d%%  ADERENCIA: %d%%\nFINAL: %d%%  REFRIG: %d%%" % [roundi(float(s["accel"])*100.0),roundi(float(s["grip"])*100.0),roundi(float(s["top"])*100.0),roundi(float(s["cool"])*100.0)]))
-		body.add_child(_label("PECAS EQUIPADAS",23,COLORS["accent"]))
+		body.add_child(_label("COMBINACOES ATIVAS",22,COLORS["accent"]))
+		var combos: Array[String] = Cards.synergies(equipped)
+		if combos.is_empty():
+			body.add_child(_label("Nenhuma combinacao ativa. Combine pneus + suspensao, turbo + refrigeracao ou turbo + cambio.",17,COLORS["dim"]))
+		else:
+			for combo in combos:
+				body.add_child(_label(combo,17,COLORS["accent"]))
+		if str(selected_route.get("weather", "seca")) == "molhada":
+			body.add_child(_label("ADERENCIA EXTRA NA CHUVA: %+d%%" % roundi(float(s["wet_grip"])*100.0),18))
+		body.add_child(_label("REDUCAO DE RISCO: %d%%" % roundi(float(s["risk_reduction"])*100.0),18))
+		body.add_child(_label("PECAS EQUIPADAS (%d/%d)" % [equipped.size(),Cards.SLOTS.size()],23,COLORS["accent"]))
 		for slot in equipped.keys():
 			var current_slot: String = str(slot)
-			body.add_child(_label(str(slot)+": "+str(equipped[slot]["name"]),19))
+			body.add_child(_label(str(slot)+": "+str(equipped[slot]["name"])+" ["+str(equipped[slot]["rarity"]).to_upper()+"]",19))
 			body.add_child(_button("RETIRAR "+current_slot,func(): _unequip(current_slot)))
-		body.add_child(_label("INVENTARIO",23,COLORS["accent"]))
+		body.add_child(_label("INVENTARIO DE PECAS (%d)" % inventory.size(),23,COLORS["accent"]))
 		for part in inventory:
-			var item := part.duplicate(true)
-			body.add_child(_button("EQUIPAR: "+str(item["name"]),func(): _equip(item)))
-		body.add_child(_label("HABILIDADES: %d" % passives.size(),20))
+			var item: Dictionary = part.duplicate(true)
+			var is_equipped: bool = equipped.has(str(item["slot"])) and str(equipped[str(item["slot"])]["id"]) == str(item["id"])
+			var equip_button := _button(("EQUIPADO: " if is_equipped else "EQUIPAR: ") + str(item["name"])+" ["+str(item["rarity"]).to_upper()+"]",func(): _equip(item))
+			equip_button.disabled = is_equipped
+			body.add_child(equip_button)
+		body.add_child(_label("EFEITOS ACUMULADOS (%d CARTAS)" % passives.size(),23,COLORS["accent"]))
+		for passive_card in Cards.CATALOG:
+			if str(passive_card["type"]) != "passive":
+				continue
+			var amount: int = Cards.stacks(passives, str(passive_card["id"]))
+			if amount > 0:
+				body.add_child(_label("%s [%s] %d/%d" % [str(passive_card["name"]),str(passive_card["rarity"]).to_upper(),amount,Cards.MAX_PASSIVE_STACKS],18))
 		body.add_child(_button("LARGAR!",_race_start))
 	elif screen=="result":
 		body.add_child(_label("VITORIA!" if won else "DERROTA",42,COLORS["accent"]))
@@ -438,8 +449,12 @@ func _draw_ui() -> void:
 		body.add_child(_button("VER RECOMPENSAS",_start_reward))
 	elif screen=="reward":
 		body.add_child(_label("ESCOLHA %d CARTA(S)" % reward_picks_left,32,COLORS["accent"]))
-		body.add_child(_label("%d opcoes disponiveis" % cards.size(),17,COLORS["dim"]))
+		body.add_child(_label("%d opcoes disponiveis • novas cartas apenas apos vitorias" % cards.size(),17,COLORS["dim"]))
 		for card in cards:
 			var item: Dictionary = card.duplicate(true)
-			body.add_child(_label(str(item["name"])+" — "+str(item["desc"]),20))
+			var category: String = str(item.get("slot","EFEITO ACUMULAVEL"))
+			var amount: int = Cards.stacks(passives,str(item["id"]))
+			var amount_label: String = " • %d/%d" % [amount,Cards.MAX_PASSIVE_STACKS] if str(item["type"]) == "passive" else ""
+			body.add_child(_label("[%s] %s" % [str(item["rarity"]).to_upper(),str(item["name"])],23,COLORS["accent"]))
+			body.add_child(_label("%s%s | %s" % [category,amount_label,str(item["desc"])],18))
 			body.add_child(_button("ESCOLHER "+str(item["name"]),func(): _choose(item)))

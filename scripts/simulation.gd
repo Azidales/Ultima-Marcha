@@ -90,6 +90,7 @@ func error_chance(kind: String, turn: float, effective_grip: float) -> float:
 		return 0.0
 	chance *= _style_risk_factor()
 	chance *= 1.0 - 0.045 * float(pilot_skill("foco"))
+	chance *= 1.0 - clampf(float(stats.get("risk_reduction", 0.0)),0.0,0.35)
 	if _under_pressure():
 		chance *= 1.22
 	return clampf(chance, 0.01, 0.45)
@@ -123,7 +124,8 @@ func tick(dt: float) -> void:
 		rival_factor += 0.12
 	if stage == 5 or stage == 10:
 		rival_factor += 0.10
-	var wet_factor := 0.82 if str(event.get("weather", "")) == "molhada" else 1.0
+	# Wet-weather tires change the available grip, not the motor's raw power.
+	var wet_factor: float = clampf(0.82 + float(stats.get("wet_grip", 0.0)), 0.5, 1.15) if str(event.get("weather", "")) == "molhada" else 1.0
 	var player_limit: float = lerpf(39.0 * p_top, 18.0 * sqrt(p_grip * wet_factor), pcurve)
 	var rival_limit: float = lerpf(38.0 * rival_factor, 18.0 * sqrt(rival_factor * wet_factor), rcurve)
 	var thermal_factor := 0.72 if heat >= 90.0 else 1.0

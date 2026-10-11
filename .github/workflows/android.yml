@@ -71,6 +71,12 @@ jobs:
       - name: Verify race rewards and career integration
         run: godot --headless --path . --script res://tests/pilot_flow_test.gd
 
+      - name: Verify weighted card draws, stack caps and set bonuses
+        run: godot --headless --path . --script res://tests/cards_test.gd
+
+      - name: Verify card inventory and racing effects
+        run: godot --headless --path . --script res://tests/cards_flow_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 
