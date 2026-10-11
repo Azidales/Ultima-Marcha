@@ -22,6 +22,7 @@ var passives: Array[Dictionary] = []
 var cards: Array[Dictionary] = []
 var rng := RandomNumberGenerator.new()
 var replay := 1
+var speed_button: Button
 var accumulator := 0.0
 var camera: Camera3D
 var player: Node3D
@@ -160,6 +161,11 @@ func _race_start() -> void:
 	sim.begin(_stats(),stage,rng.randi())
 	_set_screen("race")
 
+func _cycle_speed() -> void:
+	replay = replay + 1 if replay < 4 else 1
+	if is_instance_valid(speed_button):
+		speed_button.text = "Velocidade %dx" % replay
+
 func _skip() -> void:
 	while not sim.finished:
 		sim.tick(Race.STEP)
@@ -206,6 +212,7 @@ func _button(s: String, fn: Callable) -> Button:
 	return b
 
 func _draw_ui() -> void:
+	speed_button=null
 	progress_text=null
 	speed_text=null
 	heat_text=null
@@ -233,7 +240,8 @@ func _draw_ui() -> void:
 		outer.add_child(heat_text)
 		var buttons := HBoxContainer.new()
 		outer.add_child(buttons)
-		buttons.add_child(_button("Velocidade "+str(replay)+"x",func(): replay=2 if replay==1 else 4 if replay==2 else 1))
+		speed_button = _button("Velocidade %dx" % replay, _cycle_speed)
+		buttons.add_child(speed_button)
 		buttons.add_child(_button("Pular",_skip))
 		return
 	var back := ColorRect.new()

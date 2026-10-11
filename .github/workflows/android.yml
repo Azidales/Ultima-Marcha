@@ -56,6 +56,9 @@ jobs:
       - name: Verify responsive camera framing
         run: godot --headless --path . --script res://tests/camera_test.gd
 
+      - name: Verify playback speed button labels
+        run: godot --headless --path . --script res://tests/playback_button_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 
