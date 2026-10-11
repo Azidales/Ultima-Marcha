@@ -182,7 +182,7 @@ func _set_screen(name: String) -> void:
 			cards.append(pool[i])
 	_draw_ui()
 
-func _label(s: String, size: int=21, color: Color=COLORS["white"]) -> Label:
+func _label(s: String, size: int=21, color: Color=Color.WHITE) -> Label:
 	var l := Label.new()
 	l.text=s
 	l.add_theme_font_size_override("font_size",size)
