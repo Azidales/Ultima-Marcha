@@ -6,6 +6,8 @@ func _initialize() -> void:
 func _run() -> void:
 	var scene = load("res://scenes/main.tscn").instantiate()
 	root.add_child(scene)
+	scene._new_run()
+	scene._pick_route(str(scene.campaign.available()[0]["id"]))
 	scene._race_start()
 	var button = scene.speed_button
 	if not is_instance_valid(button):

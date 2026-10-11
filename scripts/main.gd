@@ -1,6 +1,7 @@
 extends Node3D
 
 const Race = preload("res://scripts/simulation.gd")
+const Campaign = preload("res://scripts/campaign.gd")
 const Framing = preload("res://scripts/camera_framing.gd")
 const COLORS = {"bg":Color("111927"),"panel":Color("19283b"),"accent":Color("52dfd0"),"white":Color("f5f7fb"),"dim":Color("b1c3d3")}
 const CARDS = [
@@ -14,7 +15,11 @@ const CARDS = [
 	{"name":"Escapamento Livre","type":"passive","top":0.07,"desc":"+7% velocidade maxima"}
 ]
 var sim = Race.new()
+var campaign = Campaign.new()
 var stage := 1
+var selected_route: Dictionary = {}
+var active_bulletin := ""
+var reward_picks_left := 0
 var screen := "menu"
 var equipped: Dictionary = {}
 var inventory: Array[Dictionary] = []
@@ -153,12 +158,44 @@ func _new_run() -> void:
 	equipped.clear()
 	inventory.clear()
 	passives.clear()
-	_set_screen("garage")
+	selected_route.clear()
+	active_bulletin = ""
+	campaign.generate(rng.randi())
+	_set_screen("map")
+
+func _pick_route(id: String) -> void:
+	for option in campaign.available():
+		if str(option["id"]) == id:
+			selected_route = option.duplicate(true)
+			_set_screen("garage")
+			return
+
+func _after_victory() -> void:
+	active_bulletin = campaign.maybe_bulletin()
+	if not active_bulletin.is_empty():
+		_set_screen("bulletin")
+	else:
+		_start_reward()
+
+func _start_reward() -> void:
+	reward_picks_left = campaign.reward_count(selected_route)
+	cards.clear()
+	var pool: Array = CARDS.duplicate(true)
+	pool.shuffle()
+	for i in range(mini(pool.size(), 4 if reward_picks_left == 2 else 3)):
+		cards.append(pool[i])
+	_set_screen("reward")
 
 func _race_start() -> void:
+	if selected_route.is_empty():
+		_set_screen("map")
+		return
+	if not campaign.record_race(str(selected_route["id"])):
+		_set_screen("map")
+		return
 	accumulator = 0.0
 	replay = 1
-	sim.begin(_stats(),stage,rng.randi())
+	sim.begin(_stats(),stage,rng.randi(),selected_route)
 	_set_screen("race")
 
 func _cycle_speed() -> void:
@@ -173,13 +210,26 @@ func _skip() -> void:
 	_set_screen("result")
 
 func _choose(card: Dictionary) -> void:
+	if screen != "reward" or reward_picks_left <= 0 or card not in cards:
+		return
 	if str(card.get("type"))=="part":
-		inventory.append(card.duplicate(true))
-		equipped[str(card["slot"])] = card.duplicate(true)
+		var owned: Dictionary = card.duplicate(true)
+		inventory.append(owned)
+		equipped[str(owned["slot"])] = owned
 	else:
 		passives.append(card.duplicate(true))
-	stage += 1
-	_set_screen("garage")
+	cards.erase(card)
+	reward_picks_left -= 1
+	if reward_picks_left == 0:
+		stage += 1
+		selected_route.clear()
+		_set_screen("map")
+	else:
+		_draw_ui()
+
+func _unequip(slot: String) -> void:
+	equipped.erase(slot)
+	_draw_ui()
 
 func _equip(card: Dictionary) -> void:
 	equipped[str(card["slot"])] = card
@@ -187,12 +237,6 @@ func _equip(card: Dictionary) -> void:
 
 func _set_screen(name: String) -> void:
 	screen = name
-	if screen=="reward":
-		cards.clear()
-		var pool := CARDS.duplicate(true)
-		pool.shuffle()
-		for i in range(3):
-			cards.append(pool[i])
 	_draw_ui()
 
 func _label(s: String, size: int=21, color: Color=Color.WHITE) -> Label:
@@ -259,16 +303,43 @@ func _draw_ui() -> void:
 	if screen=="menu":
 		body.add_child(_label("ULTIMA MARCHA",42,COLORS["accent"]))
 		body.add_child(_label("ROGUELIKE DE CORRIDAS AUTOMATICAS",19))
-		body.add_child(_label("Monte seu carro, enfrente rivais e escolha cartas a cada vitoria. Gire o aparelho quando quiser.",20))
+		body.add_child(_label("Monte seu carro, escolha caminhos, enfrente elites e ganhe cartas. Gire o aparelho quando quiser.",20))
 		body.add_child(_button("INICIAR TENTATIVA",_new_run))
+	elif screen=="map":
+		body.add_child(_label("MAPA DA TEMPORADA",34,COLORS["accent"]))
+		body.add_child(_label("ETAPA %d/10 • CHEFES NA 5 E NA 10" % stage,19))
+		if campaign.raced_path.size() > 0:
+			body.add_child(_label("CAMINHO PERCORRIDO:",20,COLORS["accent"]))
+			for id in campaign.raced_path:
+				var past: Dictionary = campaign.find_node(id)
+				body.add_child(_label("%d: %s / %s" % [int(past["stage"]),str(past["track"]),str(past["kind"]).to_upper()],17))
+		body.add_child(_label("PROXIMAS ROTAS DESCOBERTAS",23,COLORS["accent"]))
+		for option in campaign.available():
+			var route: Dictionary = option.duplicate(true)
+			var kind: String = str(route["kind"])
+			var label_name: String = "CHEFE" if kind=="boss" else "ELITE" if kind=="elite" else "NORMAL"
+			var reward: int = campaign.reward_count(route)
+			if int(route["stage"])==10:
+				reward=0
+			body.add_child(_label("%s - %s - %s - %s" % [label_name,str(route["track"]),str(route["weather"]),str(route["rival"])],18))
+			body.add_child(_button("ESCOLHER ROTA • %d CARTA(S)" % reward,func(): _pick_route(str(route["id"]))))
+		body.add_child(_label("NEBLINA: as proximas etapas permanecem desconhecidas.",17,COLORS["dim"]))
+		if not campaign.bulletins.is_empty():
+			body.add_child(_label("HISTORICO DO RADIO",22,COLORS["accent"]))
+			for bulletin in campaign.bulletins:
+				body.add_child(_label(str(bulletin),17))
 	elif screen=="garage":
 		body.add_child(_label("GARAGEM • CORRIDA %d DE 10" % stage,31,COLORS["accent"]))
 		body.add_child(_label("Hatch 1.6 | inventario livre",20))
+		body.add_child(_label("%s • %s • %s" % [str(selected_route.get("kind","normal")).to_upper(),str(selected_route.get("track","")),str(selected_route.get("weather",""))],18,COLORS["accent"]))
+		body.add_child(_button("MUDAR CAMINHO",func(): _set_screen("map")))
 		var s := _stats()
 		body.add_child(_label("ACEL: %d%%  ADERENCIA: %d%%\nFINAL: %d%%  REFRIG: %d%%" % [roundi(float(s["accel"])*100.0),roundi(float(s["grip"])*100.0),roundi(float(s["top"])*100.0),roundi(float(s["cool"])*100.0)]))
 		body.add_child(_label("PECAS EQUIPADAS",23,COLORS["accent"]))
 		for slot in equipped.keys():
+			var current_slot: String = str(slot)
 			body.add_child(_label(str(slot)+": "+str(equipped[slot]["name"]),19))
+			body.add_child(_button("RETIRAR "+current_slot,func(): _unequip(current_slot)))
 		body.add_child(_label("INVENTARIO",23,COLORS["accent"]))
 		for part in inventory:
 			var item := part.duplicate(true)
@@ -280,14 +351,22 @@ func _draw_ui() -> void:
 		body.add_child(_label("Corrida %d • Tempo %.1f s" % [stage,sim.time]))
 		for e in sim.log:
 			body.add_child(_label(e,16))
-		if won and stage<10:
-			body.add_child(_button("ESCOLHER CARTA",func(): _set_screen("reward")))
+		if won and stage < 10:
+			body.add_child(_button("CONTINUAR PARA RECOMPENSAS",_after_victory))
 		else:
+			if won:
+				body.add_child(_label("CAMPEONATO CONCLUIDO!",29,COLORS["accent"]))
 			body.add_child(_button("NOVA TENTATIVA",_new_run))
 		body.add_child(_button("MENU",func(): _set_screen("menu")))
+	elif screen=="bulletin":
+		body.add_child(_label("RADIO DA ESTRADA",31,COLORS["accent"]))
+		body.add_child(_label(active_bulletin,23))
+		body.add_child(_label("Os caminhos continuam ocultos ate voce avancar.",18,COLORS["dim"]))
+		body.add_child(_button("VER RECOMPENSAS",_start_reward))
 	elif screen=="reward":
-		body.add_child(_label("ESCOLHA UMA CARTA",32,COLORS["accent"]))
+		body.add_child(_label("ESCOLHA %d CARTA(S)" % reward_picks_left,32,COLORS["accent"]))
+		body.add_child(_label("%d opcoes disponiveis" % cards.size(),17,COLORS["dim"]))
 		for card in cards:
-			var item := card.duplicate(true)
+			var item: Dictionary = card.duplicate(true)
 			body.add_child(_label(str(item["name"])+" — "+str(item["desc"]),20))
 			body.add_child(_button("ESCOLHER "+str(item["name"]),func(): _choose(item)))

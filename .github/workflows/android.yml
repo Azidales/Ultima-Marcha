@@ -59,6 +59,12 @@ jobs:
       - name: Verify playback speed button labels
         run: godot --headless --path . --script res://tests/playback_button_test.gd
 
+      - name: Verify procedural campaign and safe routes
+        run: godot --headless --path . --script res://tests/campaign_test.gd
+
+      - name: Verify game campaign reward flow
+        run: godot --headless --path . --script res://tests/campaign_flow_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 
