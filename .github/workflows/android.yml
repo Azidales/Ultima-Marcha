@@ -50,6 +50,9 @@ jobs:
             echo "Godot runtime script error"; exit 1
           fi
 
+      - name: Verify portrait and landscape layout settings
+        run: godot --headless --path . --script res://tests/display_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 
