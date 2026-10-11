@@ -116,11 +116,11 @@ func _process(delta: float) -> void:
 		if sim.finished:
 			won = sim.winner=="player"
 			_set_screen("result")
-	var a := sim.progress_player if screen=="race" else 18.0
-	var b := sim.progress_rival if screen=="race" else 28.0
+	var a: float = sim.progress_player if screen=="race" else 18.0
+	var b: float = sim.progress_rival if screen=="race" else 28.0
 	player.position = _at(a,-1.8)+Vector3.UP*0.2
 	rival.position = _at(b,1.8)+Vector3.UP*0.2
-	var focus := (a+b)*0.5
+	var focus: float = (a+b)*0.5
 	var target := _at(focus)+Vector3(28,40,48)
 	camera.global_position = camera.global_position.lerp(target,minf(1.0,delta*3.0))
 	camera.look_at(_at(focus+13.0), Vector3.UP)

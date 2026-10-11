@@ -10,19 +10,56 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: barichello/godot-ci:4.5.2
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Godot import
-        run: godot --headless --path . --editor --import --quit
-      - name: Check scene loads
-        run: godot --headless --path . --quit-after 3
-      - name: Verify race simulation
+
+      - name: Configure Godot export environment
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/share/godot/export_templates" "$HOME/.config/godot"
+          cp -a /root/.local/share/godot/export_templates/4.5.2.stable "$HOME/.local/share/godot/export_templates/"
+          cp -a /root/.config/godot/. "$HOME/.config/godot/"
+          test -f "$HOME/.local/share/godot/export_templates/4.5.2.stable/android_debug.apk"
+          test -f "$HOME/.config/godot/editor_settings-4.5.tres"
+          test -f /root/debug.keystore
+          java -version
+
+      - name: Install Android SDK 35
+        run: |
+          set -euo pipefail
+          sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "build-tools;35.0.0" "platforms;android-35" > /tmp/android-sdk-setup.log
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
+          test -d "$ANDROID_HOME/platforms/android-35"
+
+      - name: Import and strictly check GDScript
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit 2>&1 | tee /tmp/godot-import.log
+          if grep -Ei "SCRIPT ERROR|Parse Error|Failed to load script" /tmp/godot-import.log; then
+            echo "Invalid GDScript found by Godot"; exit 1
+          fi
+
+      - name: Check scene launches
+        run: |
+          set -euo pipefail
+          godot --headless --path . --quit-after 4 2>&1 | tee /tmp/godot-scene.log
+          if grep -Ei "SCRIPT ERROR|Parse Error|Failed to load script|Invalid call|Invalid access" /tmp/godot-scene.log; then
+            echo "Godot runtime script error"; exit 1
+          fi
+
+      - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
+
       - name: Build Android APK
         run: |
+          set -euo pipefail
           mkdir -p build
           godot --headless --path . --export-debug Android build/UltimaMarcha-debug.apk
           test -s build/UltimaMarcha-debug.apk
+
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
