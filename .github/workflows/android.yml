@@ -65,6 +65,12 @@ jobs:
       - name: Verify game campaign reward flow
         run: godot --headless --path . --script res://tests/campaign_flow_test.gd
 
+      - name: Verify pilot progression and persistent skills
+        run: godot --headless --path . --script res://tests/pilot_test.gd
+
+      - name: Verify race rewards and career integration
+        run: godot --headless --path . --script res://tests/pilot_flow_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 

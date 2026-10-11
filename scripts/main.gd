@@ -2,6 +2,7 @@ extends Node3D
 
 const Race = preload("res://scripts/simulation.gd")
 const Campaign = preload("res://scripts/campaign.gd")
+const Pilot = preload("res://scripts/pilot.gd")
 const Framing = preload("res://scripts/camera_framing.gd")
 const COLORS = {"bg":Color("111927"),"panel":Color("19283b"),"accent":Color("52dfd0"),"white":Color("f5f7fb"),"dim":Color("b1c3d3")}
 const CARDS = [
@@ -16,6 +17,10 @@ const CARDS = [
 ]
 var sim = Race.new()
 var campaign = Campaign.new()
+var pilot = Pilot.new()
+var pilot_style := "equilibrado"
+var race_result_recorded := false
+var earned_xp := 0
 var stage := 1
 var selected_route: Dictionary = {}
 var active_bulletin := ""
@@ -40,6 +45,7 @@ var won := false
 
 func _ready() -> void:
 	rng.randomize()
+	pilot.load_save()
 	_make_track()
 	get_viewport().size_changed.connect(_draw_ui)
 	_draw_ui()
@@ -125,8 +131,7 @@ func _process(delta: float) -> void:
 			accumulator -= Race.STEP
 			steps += 1
 		if sim.finished:
-			won = sim.winner=="player"
-			_set_screen("result")
+			_finish_race()
 	var a: float = sim.progress_player if screen=="race" else 18.0
 	var b: float = sim.progress_rival if screen=="race" else 28.0
 	player.position = _at(a,-1.8)+Vector3.UP*0.2
@@ -154,6 +159,9 @@ func _stats() -> Dictionary:
 	return result
 
 func _new_run() -> void:
+	if pilot.running:
+		return
+	pilot.start_run()
 	stage = 1
 	equipped.clear()
 	inventory.clear()
@@ -195,7 +203,9 @@ func _race_start() -> void:
 		return
 	accumulator = 0.0
 	replay = 1
-	sim.begin(_stats(),stage,rng.randi(),selected_route)
+	race_result_recorded = false
+	earned_xp = 0
+	sim.begin(_stats(),stage,rng.randi(),selected_route,pilot.snapshot(pilot_style))
 	_set_screen("race")
 
 func _cycle_speed() -> void:
@@ -206,8 +216,43 @@ func _cycle_speed() -> void:
 func _skip() -> void:
 	while not sim.finished:
 		sim.tick(Race.STEP)
-	won = sim.winner=="player"
+	_finish_race()
+
+func _finish_race() -> void:
+	if race_result_recorded or not sim.finished:
+		return
+	race_result_recorded = true
+	won = sim.winner == "player"
+	earned_xp = pilot.grant_result(won, str(selected_route.get("kind", "normal")), won and stage == 10)
+	if not won or stage == 10:
+		pilot.end_run()
 	_set_screen("result")
+
+func _exit_to_menu() -> void:
+	# Leaving a run is a forfeit; earned experience is kept.
+	pilot.end_run()
+	_set_screen("menu")
+
+func _open_career() -> void:
+	if not pilot.running:
+		_set_screen("career")
+
+func _train_skill(id: String) -> void:
+	if screen == "career" and pilot.upgrade(id):
+		_draw_ui()
+
+func _train_advanced(branch: String) -> void:
+	if screen == "career" and pilot.unlock(branch):
+		_draw_ui()
+
+func _reset_pilot_tree() -> void:
+	if screen == "career" and pilot.respec():
+		_draw_ui()
+
+func _set_pilot_style(value: String) -> void:
+	if screen == "garage" and value in ["conservador", "equilibrado", "agressivo"]:
+		pilot_style = value
+		_draw_ui()
 
 func _choose(card: Dictionary) -> void:
 	if screen != "reward" or reward_picks_left <= 0 or card not in cards:
@@ -304,7 +349,29 @@ func _draw_ui() -> void:
 		body.add_child(_label("ULTIMA MARCHA",42,COLORS["accent"]))
 		body.add_child(_label("ROGUELIKE DE CORRIDAS AUTOMATICAS",19))
 		body.add_child(_label("Monte seu carro, escolha caminhos, enfrente elites e ganhe cartas. Gire o aparelho quando quiser.",20))
+		body.add_child(_label("PILOTO NIVEL %d | XP %d | PONTOS %d LIVRES" % [pilot.level(),pilot.experience,pilot.available_points()],20,COLORS["accent"]))
+		body.add_child(_button("CARREIRA DO PILOTO",_open_career))
 		body.add_child(_button("INICIAR TENTATIVA",_new_run))
+	elif screen=="career":
+		body.add_child(_label("CARREIRA DO PILOTO",33,COLORS["accent"]))
+		body.add_child(_label("NIVEL %d   |   XP TOTAL %d" % [pilot.level(),pilot.experience],22))
+		body.add_child(_label("PONTOS LIVRES %d / %d" % [pilot.available_points(),pilot.total_points()],20))
+		body.add_child(_label("Um ponto a cada 200 XP, ate 12. Reinicie a distribuicao sem custo entre tentativas.",18,COLORS["dim"]))
+		for branch in Pilot.BRANCHES.keys():
+			var b_name: String = str(branch)
+			body.add_child(_label(b_name.to_upper(),23,COLORS["accent"]))
+			for skill in Pilot.BRANCHES[branch]:
+				var id: String = str(skill)
+				body.add_child(_label("%s  -  %d/3" % [str(Pilot.SKILL_LABELS[id]),int(pilot.skills[id])],18))
+				var improve := _button("TREINAR (+1 PONTO)",func(): _train_skill(id))
+				improve.disabled = pilot.available_points() == 0 or int(pilot.skills[id]) >= 3
+				body.add_child(improve)
+			body.add_child(_label("%s  -  %s" % [str(Pilot.ADVANCED_LABELS[b_name]),"ATIVA" if bool(pilot.advanced[b_name]) else "BLOQUEADA"],18))
+			var advanced_button := _button("TECNICA AVANCADA (2 PONTOS)",func(): _train_advanced(b_name))
+			advanced_button.disabled = pilot.available_points() < 2 or pilot.branch_basics(b_name) < 4 or bool(pilot.advanced[b_name])
+			body.add_child(advanced_button)
+		body.add_child(_button("REDISTRIBUIR TODOS OS PONTOS",_reset_pilot_tree))
+		body.add_child(_button("VOLTAR AO MENU",func(): _set_screen("menu")))
 	elif screen=="map":
 		body.add_child(_label("MAPA DA TEMPORADA",34,COLORS["accent"]))
 		body.add_child(_label("ETAPA %d/10 • CHEFES NA 5 E NA 10" % stage,19))
@@ -333,6 +400,11 @@ func _draw_ui() -> void:
 		body.add_child(_label("Hatch 1.6 | inventario livre",20))
 		body.add_child(_label("%s • %s • %s" % [str(selected_route.get("kind","normal")).to_upper(),str(selected_route.get("track","")),str(selected_route.get("weather",""))],18,COLORS["accent"]))
 		body.add_child(_button("MUDAR CAMINHO",func(): _set_screen("map")))
+		body.add_child(_label("ESTILO DE PILOTAGEM: %s" % pilot_style.to_upper(),18,COLORS["accent"]))
+		for style_name in ["conservador", "equilibrado", "agressivo"]:
+			var chosen: String = str(style_name)
+			body.add_child(_button(("ATIVO: " if pilot_style == chosen else "USAR: ") + chosen.to_upper(),func(): _set_pilot_style(chosen)))
+		body.add_child(_label("A arvore de habilidades fica bloqueada durante a tentativa.",16,COLORS["dim"]))
 		var s := _stats()
 		body.add_child(_label("ACEL: %d%%  ADERENCIA: %d%%\nFINAL: %d%%  REFRIG: %d%%" % [roundi(float(s["accel"])*100.0),roundi(float(s["grip"])*100.0),roundi(float(s["top"])*100.0),roundi(float(s["cool"])*100.0)]))
 		body.add_child(_label("PECAS EQUIPADAS",23,COLORS["accent"]))
@@ -349,6 +421,7 @@ func _draw_ui() -> void:
 	elif screen=="result":
 		body.add_child(_label("VITORIA!" if won else "DERROTA",42,COLORS["accent"]))
 		body.add_child(_label("Corrida %d • Tempo %.1f s" % [stage,sim.time]))
+		body.add_child(_label("+%d XP | TOTAL: %d XP | PILOTO NIVEL %d" % [earned_xp,pilot.experience,pilot.level()],21,COLORS["accent"]))
 		for e in sim.log:
 			body.add_child(_label(e,16))
 		if won and stage < 10:
@@ -357,7 +430,7 @@ func _draw_ui() -> void:
 			if won:
 				body.add_child(_label("CAMPEONATO CONCLUIDO!",29,COLORS["accent"]))
 			body.add_child(_button("NOVA TENTATIVA",_new_run))
-		body.add_child(_button("MENU",func(): _set_screen("menu")))
+		body.add_child(_button("MENU / ENCERRAR TENTATIVA",_exit_to_menu))
 	elif screen=="bulletin":
 		body.add_child(_label("RADIO DA ESTRADA",31,COLORS["accent"]))
 		body.add_child(_label(active_bulletin,23))
