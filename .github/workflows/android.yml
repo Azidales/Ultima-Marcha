@@ -53,6 +53,9 @@ jobs:
       - name: Verify portrait and landscape layout settings
         run: godot --headless --path . --script res://tests/display_test.gd
 
+      - name: Verify responsive camera framing
+        run: godot --headless --path . --script res://tests/camera_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 

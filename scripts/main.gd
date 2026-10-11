@@ -1,6 +1,7 @@
 extends Node3D
 
 const Race = preload("res://scripts/simulation.gd")
+const Framing = preload("res://scripts/camera_framing.gd")
 const COLORS = {"bg":Color("111927"),"panel":Color("19283b"),"accent":Color("52dfd0"),"white":Color("f5f7fb"),"dim":Color("b1c3d3")}
 const CARDS = [
 	{"name":"Turbo de Rua","slot":"Turbo","type":"part","accel":0.19,"cool":-0.10,"desc":"+19% aceleracao; aumenta o calor"},
@@ -89,10 +90,14 @@ func _make_track() -> void:
 	rival = _make_car(Color("df524b"))
 	camera = Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.keep_aspect = Camera3D.KEEP_WIDTH
 	camera.current = true
 	add_child(camera)
-	camera.position = Vector3(27,36,45)
-	camera.look_at(_at(15), Vector3.UP)
+	var view_size: Vector2 = get_viewport().get_visible_rect().size
+	var initial_focus: Vector3 = _at(23.0)
+	camera.size = Framing.world_width(view_size)
+	camera.position = initial_focus + Framing.offset(view_size)
+	camera.look_at(initial_focus, Vector3.UP)
 
 func _make_car(color: Color) -> Node3D:
 	var root := Node3D.new()
@@ -120,11 +125,13 @@ func _process(delta: float) -> void:
 	var b: float = sim.progress_rival if screen=="race" else 28.0
 	player.position = _at(a,-1.8)+Vector3.UP*0.2
 	rival.position = _at(b,1.8)+Vector3.UP*0.2
-	var focus: float = (a+b)*0.5
-	var target := _at(focus)+Vector3(28,40,48)
-	camera.global_position = camera.global_position.lerp(target,minf(1.0,delta*3.0))
-	camera.look_at(_at(focus+13.0), Vector3.UP)
-	camera.size = 32.0 if get_viewport().size.x < get_viewport().size.y else 38.0
+	var view_size: Vector2 = get_viewport().get_visible_rect().size
+	var focus_distance: float = Framing.focus_distance(a, b)
+	var focus_point: Vector3 = _at(focus_distance + Framing.look_ahead(view_size))
+	var target_position: Vector3 = focus_point + Framing.offset(view_size)
+	camera.global_position = camera.global_position.lerp(target_position, minf(1.0, delta * 3.0))
+	camera.look_at(focus_point, Vector3.UP)
+	camera.size = lerpf(camera.size, Framing.world_width(view_size), minf(1.0, delta * 5.0))
 	if screen=="race" and progress_text!=null:
 		progress_text.text = "CORRIDA %d/10  •  %d%%" % [stage,roundi(100.0*minf(1.0,sim.progress_player/Race.LENGTH))]
 		speed_text.text = "%d km/h" % roundi(sim.speed_player*3.6)
