@@ -62,7 +62,7 @@ func _run() -> void:
 			_fail("capped passive presented again")
 			return
 	game.passives.append(Cards.CATALOG[17].duplicate(true))
-	var risky := game.sim
+	var risky = game.sim
 	risky.begin(game._stats(), 2, 1234, {"weather":"seca"}, {})
 	var no_risk = Cards.calculate({}, [])
 	var comparison = game.sim.get_script().new()
