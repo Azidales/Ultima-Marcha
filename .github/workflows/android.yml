@@ -75,7 +75,7 @@ jobs:
         run: godot --headless --path . --script res://tests/cards_test.gd
 
       - name: Verify card inventory and racing effects
-        run: godot --headless --path . --script res://tests/cards_flow_test.gd
+        run: timeout 30s godot --headless --path . --script res://tests/cards_flow_test.gd
 
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
