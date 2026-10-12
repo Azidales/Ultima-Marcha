@@ -128,8 +128,8 @@ func _process(delta: float) -> void:
 			_finish_race()
 	var a: float = sim.progress_player if screen=="race" else 18.0
 	var b: float = sim.progress_rival if screen=="race" else 28.0
-	player.position = _at(a,-1.8)+Vector3.UP*0.2
-	rival.position = _at(b,1.8)+Vector3.UP*0.2
+	player.position = _at(a, sim.player_lateral if screen == "race" else -1.75) + Vector3.UP * 0.2
+	rival.position = _at(b, sim.rival_lateral if screen == "race" else 1.85) + Vector3.UP * 0.2
 	var view_size: Vector2 = get_viewport().get_visible_rect().size
 	var focus_distance: float = Framing.focus_distance(a, b)
 	var focus_point: Vector3 = _at(focus_distance + Framing.look_ahead(view_size))
@@ -140,7 +140,7 @@ func _process(delta: float) -> void:
 	if screen=="race" and progress_text!=null:
 		progress_text.text = "CORRIDA %d/10  •  %d%%" % [stage,roundi(100.0*minf(1.0,sim.progress_player/Race.LENGTH))]
 		speed_text.text = "%d km/h" % roundi(sim.speed_player*3.6)
-		heat_text.text = "CALOR: %d%%  |  Rival: %.0f m" % [roundi(sim.heat),sim.progress_rival-sim.progress_player]
+		heat_text.text = "%s  •  CALOR %d%%  •  DIST. %.0f m" % [sim.race_phase, roundi(sim.heat), sim.progress_rival - sim.progress_player]
 
 func _stats() -> Dictionary:
 	return Cards.calculate(equipped, passives)
@@ -282,10 +282,10 @@ func _set_screen(name: String) -> void:
 	screen = name
 	_draw_ui()
 
-func _label(s: String, size: int=21, color: Color=Color.WHITE) -> Label:
+func _label(s: String, size: int=23, color: Color=Color.WHITE) -> Label:
 	var l := Label.new()
 	l.text=s
-	l.add_theme_font_size_override("font_size",size)
+	l.add_theme_font_size_override("font_size",maxi(size, 19))
 	l.add_theme_color_override("font_color",color)
 	l.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	return l
@@ -293,9 +293,9 @@ func _label(s: String, size: int=21, color: Color=Color.WHITE) -> Label:
 func _button(s: String, fn: Callable) -> Button:
 	var b := Button.new()
 	b.text = s
-	b.custom_minimum_size = Vector2(0, 52)
+	b.custom_minimum_size = Vector2(0, 64)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.add_theme_font_size_override("font_size", 19)
+	b.add_theme_font_size_override("font_size", 22)
 	b.pressed.connect(fn)
 	return b
 
@@ -366,23 +366,24 @@ func _rarity_color(rarity: String) -> Color:
 	return Color("dfebf3")
 
 func _build_race_ui(shell: VBoxContainer) -> void:
-	var hud := _label(_ui_title(), 24, COLORS["accent"])
+	var hud := _label(_ui_title(), 28, COLORS["accent"])
 	progress_text = hud
 	shell.add_child(hud)
-	speed_text = _label("0 km/h", 23)
-	heat_text = _label("Calor 0%", 18)
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	shell.add_child(spacer)
+	speed_text = _label("0 km/h", 25)
+	heat_text = _label("Calor 0%", 20)
 	shell.add_child(speed_text)
 	shell.add_child(heat_text)
+	# Playback controls follow the race telemetry, not the far bottom edge.
 	var controls := HBoxContainer.new()
 	controls.name = "RaceActions"
-	controls.add_theme_constant_override("separation", 9)
+	controls.add_theme_constant_override("separation", 10)
 	shell.add_child(controls)
 	speed_button = _button("Velocidade %dx" % replay, _cycle_speed)
 	controls.add_child(speed_button)
 	_action(controls, "PULAR", _skip)
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_child(spacer)
 
 func _draw_ui() -> void:
 	speed_button = null
@@ -414,12 +415,18 @@ func _draw_ui() -> void:
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
 	base.add_child(background)
 	base.move_child(background, 0)
-	var heading := _label(_ui_title(), 26, COLORS["accent"])
+	var heading := _label(_ui_title(), 29, COLORS["accent"])
 	shell.add_child(heading)
 	var hr := HSeparator.new()
 	shell.add_child(hr)
 	if screen == "garage":
 		_build_garage_tabs(shell)
+	# On tall phones the old ActionBar sat >1000 px from the heading.
+	# Keep navigation/launch next to the header while the content scrolls.
+	var footer := HBoxContainer.new()
+	footer.name = "ActionBar"
+	footer.add_theme_constant_override("separation", 10)
+	shell.add_child(footer)
 	var scroll := ScrollContainer.new()
 	scroll.name = "ContentScroll"
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -431,10 +438,6 @@ func _draw_ui() -> void:
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 10)
 	scroll.add_child(body)
-	var footer := HBoxContainer.new()
-	footer.name = "ActionBar"
-	footer.add_theme_constant_override("separation", 9)
-	shell.add_child(footer)
 	match screen:
 		"menu":
 			_ui_menu(body, footer)
@@ -513,7 +516,7 @@ func _build_garage_tabs(shell: VBoxContainer) -> void:
 	for tab in ["resumo", "pecas", "efeitos"]:
 		var value: String = str(tab)
 		var b := _button(("• " if garage_tab == value else "") + value.to_upper(), func(): _set_garage_tab(value))
-		b.custom_minimum_size.y = 42
+		b.custom_minimum_size.y = 54
 		b.disabled = garage_tab == value
 		tabs.add_child(b)
 
@@ -559,8 +562,9 @@ func _ui_garage_summary(body: VBoxContainer) -> void:
 	styles.add_child(choices)
 	for name in ["conservador", "equilibrado", "agressivo"]:
 		var value: String = str(name)
-		var b := _button(("✓ " if pilot_style == value else "") + value.substr(0, 4).to_upper(), func(): _set_pilot_style(value))
-		b.custom_minimum_size.y = 42
+		var b := _button(("✓ " if pilot_style == value else "") + value.to_upper(), func(): _set_pilot_style(value))
+		b.custom_minimum_size.y = 54
+		b.add_theme_font_size_override("font_size", 18)
 		choices.add_child(b)
 	var combos: Array[String] = Cards.synergies(equipped)
 	var features := _section(body, "COMBINACOES • %d" % combos.size())
@@ -621,6 +625,8 @@ func _ui_result(body: VBoxContainer, footer: HBoxContainer) -> void:
 	var summary := _section(body, "VITORIA!" if won else "DERROTA", "Etapa %d • %.1f s" % [stage, sim.time])
 	summary.add_child(_label("+%d XP  •  PILOTO NIVEL %d" % [earned_xp, pilot.level()], 20, COLORS["accent"]))
 	summary.add_child(_label("Ocorrencias registradas: %d" % sim.log.size(), 17))
+	summary.add_child(_label("ULTRAPASSAGENS LIMPAS: %d  •  RIVAL: %d" % [sim.player_passes, sim.rival_passes], 19, COLORS["accent"]))
+	summary.add_child(_label("FREADAS PREVENTIVAS: %d" % sim.safety_brakes, 19, COLORS["dim"]))
 	if result_log_visible and not sim.log.is_empty():
 		var log_section := _section(body, "REGISTRO DA CORRIDA")
 		for line in sim.log:

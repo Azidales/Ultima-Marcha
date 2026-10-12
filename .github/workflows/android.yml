@@ -86,6 +86,12 @@ jobs:
       - name: Verify pilot descriptions and passive bonuses
         run: godot --headless --path . --script res://tests/stat_descriptions_test.gd
 
+      - name: Verify clean duels no-contact overtakes and safe headway
+        run: timeout 35s godot --headless --path . --script res://tests/duel_test.gd
+
+      - name: Verify mobile controls are large and close to content
+        run: godot --headless --path . --script res://tests/touch_layout_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 
