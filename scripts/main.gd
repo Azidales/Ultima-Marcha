@@ -17,6 +17,9 @@ var selected_route: Dictionary = {}
 var active_bulletin := ""
 var reward_picks_left := 0
 var screen := "menu"
+var garage_tab := "resumo"
+var map_history_visible := false
+var result_log_visible := false
 var equipped: Dictionary = {}
 var inventory: Array[Dictionary] = []
 var passives: Array[Dictionary] = []
@@ -146,6 +149,8 @@ func _new_run() -> void:
 	if pilot.running:
 		return
 	pilot.start_run()
+	garage_tab = "resumo"
+	map_history_visible = false
 	stage = 1
 	equipped.clear()
 	inventory.clear()
@@ -202,6 +207,7 @@ func _skip() -> void:
 func _finish_race() -> void:
 	if race_result_recorded or not sim.finished:
 		return
+	result_log_visible = false
 	race_result_recorded = true
 	won = sim.winner == "player"
 	earned_xp = pilot.grant_result(won, str(selected_route.get("kind", "normal")), won and stage == 10)
@@ -286,175 +292,351 @@ func _label(s: String, size: int=21, color: Color=Color.WHITE) -> Label:
 
 func _button(s: String, fn: Callable) -> Button:
 	var b := Button.new()
-	b.text=s
-	b.custom_minimum_size=Vector2(185,58)
-	b.add_theme_font_size_override("font_size",20)
+	b.text = s
+	b.custom_minimum_size = Vector2(0, 52)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_font_size_override("font_size", 19)
 	b.pressed.connect(fn)
 	return b
 
+func _set_garage_tab(tab: String) -> void:
+	if screen == "garage" and tab in ["resumo", "pecas", "efeitos"]:
+		garage_tab = tab
+		_draw_ui()
+
+func _toggle_history() -> void:
+	map_history_visible = not map_history_visible
+	_draw_ui()
+
+func _toggle_result_log() -> void:
+	result_log_visible = not result_log_visible
+	_draw_ui()
+
+func _ui_title() -> String:
+	match screen:
+		"menu": return "ULTIMA MARCHA"
+		"career": return "CARREIRA DO PILOTO"
+		"map": return "MAPA • ETAPA %d/10" % stage
+		"garage": return "GARAGEM • ETAPA %d/10" % stage
+		"race": return "CORRIDA %d/10" % stage
+		"result": return "RESULTADO"
+		"bulletin": return "RADIO DA ESTRADA"
+		"reward": return "RECOMPENSA • %d RESTANTE(S)" % reward_picks_left
+	return "ULTIMA MARCHA"
+
+func _section(parent: VBoxContainer, heading: String, description: String = "") -> VBoxContainer:
+	var pane := PanelContainer.new()
+	pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.19, 0.27, 0.97)
+	style.set_corner_radius_all(12)
+	style.set_content_margin_all(12)
+	pane.add_theme_stylebox_override("panel", style)
+	parent.add_child(pane)
+	var contents := VBoxContainer.new()
+	contents.add_theme_constant_override("separation", 7)
+	pane.add_child(contents)
+	if not heading.is_empty():
+		contents.add_child(_label(heading, 21, COLORS["accent"]))
+	if not description.is_empty():
+		contents.add_child(_label(description, 17, COLORS["dim"]))
+	return contents
+
+func _action(footer: HBoxContainer, title: String, callback: Callable, primary: bool = false) -> Button:
+	var button := _button(title, callback)
+	if primary:
+		button.add_theme_color_override("font_color", Color("121e29"))
+		var style := StyleBoxFlat.new()
+		style.bg_color = COLORS["accent"]
+		style.set_corner_radius_all(9)
+		style.set_content_margin_all(9)
+		button.add_theme_stylebox_override("normal", style)
+		var hover: StyleBoxFlat = style.duplicate() as StyleBoxFlat
+		hover.bg_color = Color("8bf5e9")
+		button.add_theme_stylebox_override("hover", hover)
+		button.add_theme_stylebox_override("pressed", style)
+	footer.add_child(button)
+	return button
+
+func _rarity_color(rarity: String) -> Color:
+	if rarity == "epica":
+		return Color("e5a1ff")
+	if rarity == "rara":
+		return Color("83baff")
+	return Color("dfebf3")
+
+func _build_race_ui(shell: VBoxContainer) -> void:
+	var hud := _label(_ui_title(), 24, COLORS["accent"])
+	progress_text = hud
+	shell.add_child(hud)
+	speed_text = _label("0 km/h", 23)
+	heat_text = _label("Calor 0%", 18)
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_child(spacer)
+	shell.add_child(speed_text)
+	shell.add_child(heat_text)
+	var controls := HBoxContainer.new()
+	controls.name = "RaceActions"
+	controls.add_theme_constant_override("separation", 9)
+	shell.add_child(controls)
+	speed_button = _button("Velocidade %dx" % replay, _cycle_speed)
+	controls.add_child(speed_button)
+	_action(controls, "PULAR", _skip)
+
 func _draw_ui() -> void:
-	speed_button=null
-	progress_text=null
-	speed_text=null
-	heat_text=null
-	if layer!=null:
+	speed_button = null
+	progress_text = null
+	speed_text = null
+	heat_text = null
+	if layer != null:
 		layer.queue_free()
-	layer=CanvasLayer.new()
+	layer = CanvasLayer.new()
 	add_child(layer)
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["left","right","top","bottom"]:
-		margin.add_theme_constant_override("margin_"+side,16)
-	layer.add_child(margin)
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation",12)
-	margin.add_child(outer)
-	if screen=="race":
-		progress_text=_label("CORRIDA",25,COLORS["accent"])
-		speed_text=_label("0 km/h",24)
-		heat_text=_label("Calor 0%",20)
-		outer.add_child(progress_text)
-		var spacer := Control.new()
-		spacer.size_flags_vertical=Control.SIZE_EXPAND_FILL
-		outer.add_child(spacer)
-		outer.add_child(speed_text)
-		outer.add_child(heat_text)
-		var buttons := HBoxContainer.new()
-		outer.add_child(buttons)
-		speed_button = _button("Velocidade %dx" % replay, _cycle_speed)
-		buttons.add_child(speed_button)
-		buttons.add_child(_button("Pular",_skip))
+	var base := MarginContainer.new()
+	base.name = "SafeArea"
+	base.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var portrait: bool = get_viewport().get_visible_rect().size.y > get_viewport().get_visible_rect().size.x
+	var safe_margin := 12 if portrait else 16
+	for edge in ["left", "right", "top", "bottom"]:
+		base.add_theme_constant_override("margin_" + edge, safe_margin)
+	layer.add_child(base)
+	var shell := VBoxContainer.new()
+	shell.name = "UILayout"
+	shell.add_theme_constant_override("separation", 9)
+	base.add_child(shell)
+	if screen == "race":
+		_build_race_ui(shell)
 		return
-	var back := ColorRect.new()
-	back.color=Color(0.04,0.07,0.13,0.87)
-	back.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_child(back)
-	margin.move_child(back,0)
+	var background := ColorRect.new()
+	background.color = Color(0.045, 0.07, 0.11, 0.97)
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	base.add_child(background)
+	base.move_child(background, 0)
+	var heading := _label(_ui_title(), 26, COLORS["accent"])
+	shell.add_child(heading)
+	var hr := HSeparator.new()
+	shell.add_child(hr)
+	if screen == "garage":
+		_build_garage_tabs(shell)
 	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical=Control.SIZE_EXPAND_FILL
-	outer.add_child(scroll)
+	scroll.name = "ContentScroll"
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	shell.add_child(scroll)
 	var body := VBoxContainer.new()
-	body.size_flags_horizontal=Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation",15)
+	body.name = "ScreenBody"
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 10)
 	scroll.add_child(body)
-	if screen=="menu":
-		body.add_child(_label("ULTIMA MARCHA",42,COLORS["accent"]))
-		body.add_child(_label("ROGUELIKE DE CORRIDAS AUTOMATICAS",19))
-		body.add_child(_label("Monte seu carro, escolha caminhos, enfrente elites e ganhe cartas. Gire o aparelho quando quiser.",20))
-		body.add_child(_label("PILOTO NIVEL %d | XP %d | PONTOS %d LIVRES" % [pilot.level(),pilot.experience,pilot.available_points()],20,COLORS["accent"]))
-		body.add_child(_button("CARREIRA DO PILOTO",_open_career))
-		body.add_child(_button("INICIAR TENTATIVA",_new_run))
-	elif screen=="career":
-		body.add_child(_label("CARREIRA DO PILOTO",33,COLORS["accent"]))
-		body.add_child(_label("NIVEL %d   |   XP TOTAL %d" % [pilot.level(),pilot.experience],22))
-		body.add_child(_label("PONTOS LIVRES %d / %d" % [pilot.available_points(),pilot.total_points()],20))
-		body.add_child(_label("Um ponto a cada 200 XP, ate 12. Reinicie a distribuicao sem custo entre tentativas.",18,COLORS["dim"]))
-		for branch in Pilot.BRANCHES.keys():
-			var b_name: String = str(branch)
-			body.add_child(_label(b_name.to_upper(),23,COLORS["accent"]))
-			for skill in Pilot.BRANCHES[branch]:
-				var id: String = str(skill)
-				body.add_child(_label("%s  -  %d/3" % [str(Pilot.SKILL_LABELS[id]),int(pilot.skills[id])],18))
-				var improve := _button("TREINAR (+1 PONTO)",func(): _train_skill(id))
-				improve.disabled = pilot.available_points() == 0 or int(pilot.skills[id]) >= 3
-				body.add_child(improve)
-			body.add_child(_label("%s  -  %s" % [str(Pilot.ADVANCED_LABELS[b_name]),"ATIVA" if bool(pilot.advanced[b_name]) else "BLOQUEADA"],18))
-			var advanced_button := _button("TECNICA AVANCADA (2 PONTOS)",func(): _train_advanced(b_name))
-			advanced_button.disabled = pilot.available_points() < 2 or pilot.branch_basics(b_name) < 4 or bool(pilot.advanced[b_name])
-			body.add_child(advanced_button)
-		body.add_child(_button("REDISTRIBUIR TODOS OS PONTOS",_reset_pilot_tree))
-		body.add_child(_button("VOLTAR AO MENU",func(): _set_screen("menu")))
-	elif screen=="map":
-		body.add_child(_label("MAPA DA TEMPORADA",34,COLORS["accent"]))
-		body.add_child(_label("ETAPA %d/10 • CHEFES NA 5 E NA 10" % stage,19))
-		if campaign.raced_path.size() > 0:
-			body.add_child(_label("CAMINHO PERCORRIDO:",20,COLORS["accent"]))
-			for id in campaign.raced_path:
-				var past: Dictionary = campaign.find_node(id)
-				body.add_child(_label("%d: %s / %s" % [int(past["stage"]),str(past["track"]),str(past["kind"]).to_upper()],17))
-		body.add_child(_label("PROXIMAS ROTAS DESCOBERTAS",23,COLORS["accent"]))
-		for option in campaign.available():
-			var route: Dictionary = option.duplicate(true)
-			var kind: String = str(route["kind"])
-			var label_name: String = "CHEFE" if kind=="boss" else "ELITE" if kind=="elite" else "NORMAL"
-			var reward: int = campaign.reward_count(route)
-			if int(route["stage"])==10:
-				reward=0
-			body.add_child(_label("%s - %s - %s - %s" % [label_name,str(route["track"]),str(route["weather"]),str(route["rival"])],18))
-			body.add_child(_button("ESCOLHER ROTA • %d CARTA(S)" % reward,func(): _pick_route(str(route["id"]))))
-		body.add_child(_label("NEBLINA: as proximas etapas permanecem desconhecidas.",17,COLORS["dim"]))
-		if not campaign.bulletins.is_empty():
-			body.add_child(_label("HISTORICO DO RADIO",22,COLORS["accent"]))
-			for bulletin in campaign.bulletins:
-				body.add_child(_label(str(bulletin),17))
-	elif screen=="garage":
-		body.add_child(_label("GARAGEM • CORRIDA %d DE 10" % stage,31,COLORS["accent"]))
-		body.add_child(_label("Hatch 1.6 | inventario livre",20))
-		body.add_child(_label("%s • %s • %s" % [str(selected_route.get("kind","normal")).to_upper(),str(selected_route.get("track","")),str(selected_route.get("weather",""))],18,COLORS["accent"]))
-		body.add_child(_button("MUDAR CAMINHO",func(): _set_screen("map")))
-		body.add_child(_label("ESTILO DE PILOTAGEM: %s" % pilot_style.to_upper(),18,COLORS["accent"]))
-		for style_name in ["conservador", "equilibrado", "agressivo"]:
-			var chosen: String = str(style_name)
-			body.add_child(_button(("ATIVO: " if pilot_style == chosen else "USAR: ") + chosen.to_upper(),func(): _set_pilot_style(chosen)))
-		body.add_child(_label("A arvore de habilidades fica bloqueada durante a tentativa.",16,COLORS["dim"]))
-		var s := _stats()
-		body.add_child(_label("ACEL: %d%%  ADERENCIA: %d%%\nFINAL: %d%%  REFRIG: %d%%" % [roundi(float(s["accel"])*100.0),roundi(float(s["grip"])*100.0),roundi(float(s["top"])*100.0),roundi(float(s["cool"])*100.0)]))
-		body.add_child(_label("COMBINACOES ATIVAS",22,COLORS["accent"]))
-		var combos: Array[String] = Cards.synergies(equipped)
-		if combos.is_empty():
-			body.add_child(_label("Nenhuma combinacao ativa. Combine pneus + suspensao, turbo + refrigeracao ou turbo + cambio.",17,COLORS["dim"]))
-		else:
-			for combo in combos:
-				body.add_child(_label(combo,17,COLORS["accent"]))
-		if str(selected_route.get("weather", "seca")) == "molhada":
-			body.add_child(_label("ADERENCIA EXTRA NA CHUVA: %+d%%" % roundi(float(s["wet_grip"])*100.0),18))
-		body.add_child(_label("REDUCAO DE RISCO: %d%%" % roundi(float(s["risk_reduction"])*100.0),18))
-		body.add_child(_label("PECAS EQUIPADAS (%d/%d)" % [equipped.size(),Cards.SLOTS.size()],23,COLORS["accent"]))
-		for slot in equipped.keys():
-			var current_slot: String = str(slot)
-			body.add_child(_label(str(slot)+": "+str(equipped[slot]["name"])+" ["+str(equipped[slot]["rarity"]).to_upper()+"]",19))
-			body.add_child(_button("RETIRAR "+current_slot,func(): _unequip(current_slot)))
-		body.add_child(_label("INVENTARIO DE PECAS (%d)" % inventory.size(),23,COLORS["accent"]))
-		for part in inventory:
-			var item: Dictionary = part.duplicate(true)
-			var is_equipped: bool = equipped.has(str(item["slot"])) and str(equipped[str(item["slot"])]["id"]) == str(item["id"])
-			var equip_button := _button(("EQUIPADO: " if is_equipped else "EQUIPAR: ") + str(item["name"])+" ["+str(item["rarity"]).to_upper()+"]",func(): _equip(item))
-			equip_button.disabled = is_equipped
-			body.add_child(equip_button)
-		body.add_child(_label("EFEITOS ACUMULADOS (%d CARTAS)" % passives.size(),23,COLORS["accent"]))
-		for passive_card in Cards.CATALOG:
-			if str(passive_card["type"]) != "passive":
+	var footer := HBoxContainer.new()
+	footer.name = "ActionBar"
+	footer.add_theme_constant_override("separation", 9)
+	shell.add_child(footer)
+	match screen:
+		"menu":
+			_ui_menu(body, footer)
+		"career":
+			_ui_career(body, footer)
+		"map":
+			_ui_map(body, footer)
+		"garage":
+			_ui_garage(body, footer)
+		"result":
+			_ui_result(body, footer)
+		"bulletin":
+			_ui_bulletin(body, footer)
+		"reward":
+			_ui_rewards(body, footer)
+
+func _ui_menu(body: VBoxContainer, footer: HBoxContainer) -> void:
+	var panel := _section(body, "ROGUELIKE DE CORRIDAS AUTOMATICAS")
+	panel.add_child(_label("Monte seu carro, escolha sua rota e enfrente ate dez adversarios.", 20))
+	panel.add_child(_label("PILOTO NIVEL %d  •  %d XP  •  %d PONTO(S)" % [pilot.level(), pilot.experience, pilot.available_points()], 18, COLORS["accent"]))
+	_action(footer, "PILOTO", _open_career)
+	_action(footer, "JOGAR", _new_run, true)
+
+func _ui_career(body: VBoxContainer, footer: HBoxContainer) -> void:
+	var status := _section(body, "NIVEL %d • %d XP" % [pilot.level(), pilot.experience])
+	status.add_child(_label("%d PONTO(S) LIVRE(S) DE %d" % [pilot.available_points(), pilot.total_points()], 19))
+	status.add_child(_label("1 ponto a cada 200 XP; limite 12. Mudancas somente entre tentativas.", 17, COLORS["dim"]))
+	for branch in Pilot.BRANCHES.keys():
+		var branch_id: String = str(branch)
+		var content := _section(body, branch_id.to_upper(), str(Pilot.ADVANCED_LABELS[branch_id]))
+		for entry in Pilot.BRANCHES[branch_id]:
+			var skill_id: String = str(entry)
+			content.add_child(_label("%s  %d/3" % [str(Pilot.SKILL_LABELS[skill_id]), int(pilot.skills[skill_id])], 18))
+			var train := _button("TREINAR (+1)", func(): _train_skill(skill_id))
+			train.disabled = pilot.available_points() <= 0 or int(pilot.skills[skill_id]) >= 3
+			content.add_child(train)
+		content.add_child(_label("Avancada: %s" % ("DESBLOQUEADA" if bool(pilot.advanced[branch_id]) else "BLOQUEADA"), 18))
+		var unlock := _button("DESBLOQUEAR (2 PONTOS)", func(): _train_advanced(branch_id))
+		unlock.disabled = pilot.available_points() < 2 or pilot.branch_basics(branch_id) < 4 or bool(pilot.advanced[branch_id])
+		content.add_child(unlock)
+	_action(footer, "VOLTAR", func(): _set_screen("menu"))
+	_action(footer, "REDISTRIBUIR", _reset_pilot_tree)
+
+func _ui_map(body: VBoxContainer, footer: HBoxContainer) -> void:
+	var info := _section(body, "ETAPA %d / 10" % stage, "Chefes obrigatorios: 5 e 10 • caminhos futuros ocultos")
+	info.add_child(_label("Selecione uma rota. Voce ainda podera ajustar o carro antes da largada.", 17))
+	for node in campaign.available():
+		var route: Dictionary = node.duplicate(true)
+		var kind: String = str(route["kind"])
+		var kind_label := "CHEFE" if kind == "boss" else "ELITE" if kind == "elite" else "NORMAL"
+		var reward_count: int = 0 if stage == 10 else campaign.reward_count(route)
+		var option := _section(body, "%s  •  %s" % [kind_label, str(route["track"])], "%s  |  %s  |  %d CARTA(S)" % [str(route["weather"]), str(route["rival"]), reward_count])
+		option.add_child(_button("PREPARAR PARA ESTA ROTA", func(): _pick_route(str(route["id"]))))
+	if not campaign.bulletins.is_empty():
+		var bulletins := _section(body, "ULTIMO BOLETIM")
+		bulletins.add_child(_label(str(campaign.bulletins.back()), 17))
+	if map_history_visible and not campaign.raced_path.is_empty():
+		var history := _section(body, "ETAPAS REALIZADAS")
+		for previous_id in campaign.raced_path:
+			var visited: Dictionary = campaign.find_node(previous_id)
+			history.add_child(_label("%d. %s • %s" % [int(visited["stage"]), str(visited["track"]), str(visited["kind"]).to_upper()], 17))
+	if campaign.raced_path.is_empty():
+		_action(footer, "INICIO", _exit_to_menu)
+	else:
+		_action(footer, "HISTORICO" if not map_history_visible else "OCULTAR", _toggle_history)
+	_action(footer, "AJUDA: MAPA", func(): _show_help("map"))
+
+func _build_garage_tabs(shell: VBoxContainer) -> void:
+	var tabs := HBoxContainer.new()
+	tabs.name = "TabBar"
+	tabs.add_theme_constant_override("separation", 6)
+	shell.add_child(tabs)
+	for tab in ["resumo", "pecas", "efeitos"]:
+		var value: String = str(tab)
+		var b := _button(("• " if garage_tab == value else "") + value.to_upper(), func(): _set_garage_tab(value))
+		b.custom_minimum_size.y = 42
+		b.disabled = garage_tab == value
+		tabs.add_child(b)
+
+func _ui_garage(body: VBoxContainer, footer: HBoxContainer) -> void:
+	if garage_tab == "pecas":
+		_ui_garage_parts(body)
+	elif garage_tab == "efeitos":
+		_ui_garage_effects(body)
+	else:
+		_ui_garage_summary(body)
+	_action(footer, "ROTAS", func(): _set_screen("map"))
+	_action(footer, "LARGAR!", _race_start, true)
+
+func _ui_garage_summary(body: VBoxContainer) -> void:
+	var overview := _section(body, "HATCH 1.6 • %s" % str(selected_route.get("kind", "normal")).to_upper(), "%s  •  %s" % [str(selected_route.get("track", "")), str(selected_route.get("weather", ""))])
+	var s: Dictionary = _stats()
+	var stats_grid := GridContainer.new()
+	stats_grid.columns = 2
+	overview.add_child(stats_grid)
+	for pair in [["ACEL", "accel"], ["ADERENCIA", "grip"], ["FINAL", "top"], ["REFRIG", "cool"]]:
+		stats_grid.add_child(_label("%s: %d%%" % [pair[0], roundi(float(s[pair[1]]) * 100.0)], 18))
+	overview.add_child(_label("PECAS %d/%d • CARTAS PASSIVAS %d" % [equipped.size(), Cards.SLOTS.size(), passives.size()], 17, COLORS["dim"]))
+	var styles := _section(body, "ESTILO DE PILOTAGEM", "Pode ser alterado antes de cada corrida.")
+	var choices := HBoxContainer.new()
+	styles.add_child(choices)
+	for name in ["conservador", "equilibrado", "agressivo"]:
+		var value: String = str(name)
+		var b := _button(("✓ " if pilot_style == value else "") + value.substr(0, 4).to_upper(), func(): _set_pilot_style(value))
+		b.custom_minimum_size.y = 42
+		choices.add_child(b)
+	var combos: Array[String] = Cards.synergies(equipped)
+	var features := _section(body, "COMBINACOES • %d" % combos.size())
+	if combos.is_empty():
+		features.add_child(_label("Equipe Turbo + Radiador, Turbo + Cambio ou Pneus + Suspensao.", 17, COLORS["dim"]))
+	else:
+		for item in combos:
+			features.add_child(_label(item, 18))
+	if str(selected_route.get("weather", "")) == "molhada":
+		features.add_child(_label("ADERENCIA NA CHUVA: %+d%%" % roundi(float(s["wet_grip"]) * 100.0), 17))
+	features.add_child(_label("REDUCAO DE RISCO: %d%%" % roundi(float(s["risk_reduction"]) * 100.0), 17))
+
+func _ui_garage_parts(body: VBoxContainer) -> void:
+	var summary := _section(body, "TROCA LIVRE", "Retirar uma peca nao a descarta. Apenas uma peca por espaco.")
+	summary.add_child(_label("%d PECAS NO INVENTARIO" % inventory.size(), 18))
+	for slot in Cards.SLOTS:
+		var equip_id: String = str(slot)
+		var selected: Dictionary = equipped.get(equip_id, {})
+		var pane := _section(body, equip_id.to_upper(), "Equipado: %s" % str(selected.get("name", "NENHUM")))
+		if not selected.is_empty():
+			pane.add_child(_button("RETIRAR", func(): _unequip(equip_id)))
+		var any_owned := false
+		for card in inventory:
+			if str(card.get("slot", "")) != equip_id:
 				continue
-			var amount: int = Cards.stacks(passives, str(passive_card["id"]))
-			if amount > 0:
-				body.add_child(_label("%s [%s] %d/%d" % [str(passive_card["name"]),str(passive_card["rarity"]).to_upper(),amount,Cards.MAX_PASSIVE_STACKS],18))
-		body.add_child(_button("LARGAR!",_race_start))
-	elif screen=="result":
-		body.add_child(_label("VITORIA!" if won else "DERROTA",42,COLORS["accent"]))
-		body.add_child(_label("Corrida %d • Tempo %.1f s" % [stage,sim.time]))
-		body.add_child(_label("+%d XP | TOTAL: %d XP | PILOTO NIVEL %d" % [earned_xp,pilot.experience,pilot.level()],21,COLORS["accent"]))
-		for e in sim.log:
-			body.add_child(_label(e,16))
-		if won and stage < 10:
-			body.add_child(_button("CONTINUAR PARA RECOMPENSAS",_after_victory))
-		else:
-			if won:
-				body.add_child(_label("CAMPEONATO CONCLUIDO!",29,COLORS["accent"]))
-			body.add_child(_button("NOVA TENTATIVA",_new_run))
-		body.add_child(_button("MENU / ENCERRAR TENTATIVA",_exit_to_menu))
-	elif screen=="bulletin":
-		body.add_child(_label("RADIO DA ESTRADA",31,COLORS["accent"]))
-		body.add_child(_label(active_bulletin,23))
-		body.add_child(_label("Os caminhos continuam ocultos ate voce avancar.",18,COLORS["dim"]))
-		body.add_child(_button("VER RECOMPENSAS",_start_reward))
-	elif screen=="reward":
-		body.add_child(_label("ESCOLHA %d CARTA(S)" % reward_picks_left,32,COLORS["accent"]))
-		body.add_child(_label("%d opcoes disponiveis • novas cartas apenas apos vitorias" % cards.size(),17,COLORS["dim"]))
-		for card in cards:
-			var item: Dictionary = card.duplicate(true)
-			var category: String = str(item.get("slot","EFEITO ACUMULAVEL"))
-			var amount: int = Cards.stacks(passives,str(item["id"]))
-			var amount_label: String = " • %d/%d" % [amount,Cards.MAX_PASSIVE_STACKS] if str(item["type"]) == "passive" else ""
-			body.add_child(_label("[%s] %s" % [str(item["rarity"]).to_upper(),str(item["name"])],23,COLORS["accent"]))
-			body.add_child(_label("%s%s | %s" % [category,amount_label,str(item["desc"])],18))
-			body.add_child(_button("ESCOLHER "+str(item["name"]),func(): _choose(item)))
+			any_owned = true
+			var part: Dictionary = card.duplicate(true)
+			var is_current := str(selected.get("id", "")) == str(part.get("id", ""))
+			var choose := _button(("EQUIPADA: " if is_current else "EQUIPAR: ") + str(part["name"]), func(): _equip(part))
+			choose.disabled = is_current
+			pane.add_child(choose)
+		if not any_owned:
+			pane.add_child(_label("Sem pecas no inventario", 17, COLORS["dim"]))
+
+func _ui_garage_effects(body: VBoxContainer) -> void:
+	var combinations := _section(body, "COMBINACOES ATIVAS")
+	var combos: Array[String] = Cards.synergies(equipped)
+	if combos.is_empty():
+		combinations.add_child(_label("Nenhuma combinacao equipada.", 18))
+	else:
+		for combo in combos:
+			combinations.add_child(_label(combo, 18, COLORS["accent"]))
+	var passives_section := _section(body, "CARTAS PASSIVAS", "Acumulam ate 3 copias por habilidade.")
+	var count := 0
+	for data in Cards.CATALOG:
+		if str(data.get("type", "")) != "passive":
+			continue
+		var copies: int = Cards.stacks(passives, str(data["id"]))
+		if copies > 0:
+			count += 1
+			passives_section.add_child(_label("%s • %d/%d" % [str(data["name"]), copies, Cards.MAX_PASSIVE_STACKS], 18, _rarity_color(str(data["rarity"]))))
+			passives_section.add_child(_label(str(data["desc"]), 16, COLORS["dim"]))
+	if count == 0:
+		passives_section.add_child(_label("Nenhum efeito acumulavel adquirido.", 18, COLORS["dim"]))
+
+func _ui_result(body: VBoxContainer, footer: HBoxContainer) -> void:
+	var summary := _section(body, "VITORIA!" if won else "DERROTA", "Etapa %d • %.1f s" % [stage, sim.time])
+	summary.add_child(_label("+%d XP  •  PILOTO NIVEL %d" % [earned_xp, pilot.level()], 20, COLORS["accent"]))
+	summary.add_child(_label("Ocorrencias registradas: %d" % sim.log.size(), 17))
+	if result_log_visible and not sim.log.is_empty():
+		var log_section := _section(body, "REGISTRO DA CORRIDA")
+		for line in sim.log:
+			log_section.add_child(_label(str(line), 17))
+	if not sim.log.is_empty():
+		var button := _button("VER EVENTOS" if not result_log_visible else "OCULTAR EVENTOS", _toggle_result_log)
+		body.add_child(button)
+	_action(footer, "MENU", _exit_to_menu)
+	if won and stage < 10:
+		_action(footer, "RECOMPENSAS", _after_victory, true)
+	else:
+		if won:
+			body.add_child(_label("CAMPEONATO CONCLUIDO!", 22, COLORS["accent"]))
+		_action(footer, "RECOMECAR", _new_run, true)
+
+func _ui_bulletin(body: VBoxContainer, footer: HBoxContainer) -> void:
+	var radio := _section(body, "INFORMACAO DAS PROXIMAS ROTAS")
+	radio.add_child(_label(active_bulletin, 21))
+	radio.add_child(_label("O boletim descreve uma rota possivel, nao necessariamente a sua escolha.", 17, COLORS["dim"]))
+	_action(footer, "VER CARTAS", _start_reward, true)
+
+func _ui_rewards(body: VBoxContainer, footer: HBoxContainer) -> void:
+	var header := _section(body, "%d ESCOLHA(S) RESTANTE(S)" % reward_picks_left, "Escolha uma carta por vez. As outras opcoes continuam disponiveis.")
+	for offered in cards:
+		var card: Dictionary = offered.duplicate(true)
+		var rarity: String = str(card.get("rarity", "comum"))
+		var passive: bool = str(card.get("type", "")) == "passive"
+		var caption: String = "EFEITO SEM ESPACO" if passive else "PECA • %s" % str(card.get("slot", ""))
+		var info := _section(body, str(card.get("name", "")), caption)
+		info.add_child(_label(str(card.get("desc", "")), 18))
+		info.add_child(_label(rarity.to_upper(), 17, _rarity_color(rarity)))
+		if passive:
+			info.add_child(_label("ACUMULO: %d/%d" % [Cards.stacks(passives, str(card.get("id", ""))), Cards.MAX_PASSIVE_STACKS], 16, COLORS["dim"]))
+		var take := _button("ESCOLHER ESTA CARTA", func(): _choose(card))
+		info.add_child(take)
+	if cards.is_empty():
+		header.add_child(_label("Nenhuma carta elegivel encontrada.", 18, COLORS["dim"]))
+
+func _show_help(topic: String) -> void:
+	if topic == "map":
+		OS.alert("As rotas disponiveis estao visiveis. Caminhos adiante ficam ocultos ate concluir a etapa. Elites sao opcionais; chefes estao nas etapas 5 e 10.", "Como funciona o mapa")
