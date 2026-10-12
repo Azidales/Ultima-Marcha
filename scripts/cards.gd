@@ -20,13 +20,13 @@ const CATALOG := [
 	{"id":"aero_ativo","name":"Aerodinamica Ativa","type":"part","rarity":"epica","slot":"Aerodinamica","grip":0.19,"top":0.06,"desc":"+19% aderencia; +6% final"},
 	{"id":"suspensao_rua","name":"Suspensao Esportiva","type":"part","rarity":"comum","slot":"Suspensao","grip":0.12,"desc":"+12% aderencia"},
 	{"id":"suspensao_ativa","name":"Suspensao Adaptativa","type":"part","rarity":"epica","slot":"Suspensao","grip":0.25,"desc":"+25% aderencia"},
-	{"id":"remap","name":"Remapeamento","type":"passive","rarity":"comum","accel":0.055,"desc":"+5,5% aceleracao por copia (ate 3)"},
-	{"id":"curvas","name":"Tecnica de Curvas","type":"passive","rarity":"comum","grip":0.055,"desc":"+5,5% aderencia por copia (ate 3)"},
-	{"id":"escape","name":"Escapamento Livre","type":"passive","rarity":"comum","top":0.045,"desc":"+4,5% velocidade final por copia (ate 3)"},
-	{"id":"telemetria","name":"Telemetria","type":"passive","rarity":"rara","risk_reduction":0.07,"desc":"-7% risco relativo de erros por copia (ate 3)"},
-	{"id":"refrigeracao","name":"Dutos de Resfriamento","type":"passive","rarity":"rara","cool":0.10,"desc":"+10% refrigeracao por copia (ate 3)"},
-	{"id":"vacuodinamico","name":"Eficiencia Aerodinamica","type":"passive","rarity":"epica","top":0.09,"desc":"+9% velocidade final por copia (ate 3)"},
-	{"id":"engenharia","name":"Preparacao Fina","type":"passive","rarity":"epica","accel":0.085,"cool":-0.035,"desc":"+8,5% aceleracao; -3,5% refrigeracao por copia"}
+	{"id":"remap","name":"Remapeamento","type":"passive","rarity":"comum","accel":0.055,"desc":"+5,5% aceleracao por acumulo (max. 3)"},
+	{"id":"curvas","name":"Tecnica de Curvas","type":"passive","rarity":"comum","grip":0.055,"desc":"+5,5% aderencia por acumulo (max. 3)"},
+	{"id":"escape","name":"Escapamento Livre","type":"passive","rarity":"comum","top":0.045,"desc":"+4,5% velocidade final por acumulo (max. 3)"},
+	{"id":"telemetria","name":"Telemetria","type":"passive","rarity":"rara","risk_reduction":0.07,"desc":"-7% risco relativo de erros por acumulo (max. 3)"},
+	{"id":"refrigeracao","name":"Dutos de Resfriamento","type":"passive","rarity":"rara","cool":0.10,"desc":"+10% refrigeracao por acumulo (max. 3)"},
+	{"id":"vacuodinamico","name":"Eficiencia Aerodinamica","type":"passive","rarity":"epica","top":0.09,"desc":"+9% velocidade final por acumulo (max. 3)"},
+	{"id":"engenharia","name":"Preparacao Fina","type":"passive","rarity":"epica","accel":0.085,"cool":-0.035,"desc":"+8,5% aceleracao; -3,5% refrigeracao por acumulo"}
 ]
 
 static func stacks(passives: Array, card_id: String) -> int:
@@ -86,6 +86,28 @@ static func synergies(equipped: Dictionary) -> Array[String]:
 	if equipped.has("Turbo") and equipped.has("Cambio"):
 		active.append("Trem de Forca: +4% aceleracao")
 	return active
+
+
+# Descricao exata do bonus aditivo acumulado das cartas passivas.
+static func passive_bonus(card: Dictionary, count: int) -> String:
+	if str(card.get("type", "")) != "passive":
+		return ""
+	if count <= 0:
+		return "Nenhum bonus ativo"
+	var effects: Array[String] = []
+	var labels := {
+		"accel": "Aceleracao",
+		"grip": "Aderencia",
+		"top": "Velocidade final",
+		"cool": "Refrigeracao",
+		"wet_grip": "Aderencia na chuva",
+		"risk_reduction": "Reducao de risco"
+	}
+	for key in STATS:
+		var raw: float = float(card.get(key, 0.0)) * float(count) * 100.0
+		if not is_zero_approx(raw):
+			effects.append("%s: %+.1f%%" % [str(labels[key]), raw])
+	return " | ".join(effects)
 
 static func calculate(equipped: Dictionary, passives: Array) -> Dictionary:
 	var result := {"accel":1.0, "grip":1.0, "top":1.0, "cool":1.0, "wet_grip":0.0, "risk_reduction":0.0}

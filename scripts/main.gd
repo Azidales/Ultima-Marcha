@@ -468,10 +468,13 @@ func _ui_career(body: VBoxContainer, footer: HBoxContainer) -> void:
 		for entry in Pilot.BRANCHES[branch_id]:
 			var skill_id: String = str(entry)
 			content.add_child(_label("%s  %d/3" % [str(Pilot.SKILL_LABELS[skill_id]), int(pilot.skills[skill_id])], 18))
+			content.add_child(_label(Pilot.skill_effect(skill_id, int(pilot.skills[skill_id])), 16, COLORS["dim"]))
 			var train := _button("TREINAR (+1)", func(): _train_skill(skill_id))
 			train.disabled = pilot.available_points() <= 0 or int(pilot.skills[skill_id]) >= 3
 			content.add_child(train)
 		content.add_child(_label("Avancada: %s" % ("DESBLOQUEADA" if bool(pilot.advanced[branch_id]) else "BLOQUEADA"), 18))
+		content.add_child(_label(Pilot.advanced_effect(branch_id), 16, COLORS["dim"]))
+		content.add_child(_label("Requer 4 pontos basicos nesta especialidade e 2 pontos livres.", 16, COLORS["dim"]))
 		var unlock := _button("DESBLOQUEAR (2 PONTOS)", func(): _train_advanced(branch_id))
 		unlock.disabled = pilot.available_points() < 2 or pilot.branch_basics(branch_id) < 4 or bool(pilot.advanced[branch_id])
 		content.add_child(unlock)
@@ -533,6 +536,13 @@ func _ui_garage_summary(body: VBoxContainer) -> void:
 	for pair in [["ACEL", "accel"], ["ADERENCIA", "grip"], ["FINAL", "top"], ["REFRIG", "cool"]]:
 		stats_grid.add_child(_label("%s: %d%%" % [pair[0], roundi(float(s[pair[1]]) * 100.0)], 18))
 	overview.add_child(_label("PECAS %d/%d • CARTAS PASSIVAS %d" % [equipped.size(), Cards.SLOTS.size(), passives.size()], 17, COLORS["dim"]))
+	var explain := _section(body, "O QUE CADA ATRIBUTO FAZ")
+	explain.add_child(_label("ACEL: rapidez para ganhar velocidade nas retas e saidas de curva.", 16, COLORS["dim"]))
+	explain.add_child(_label("ADERENCIA: permite maior velocidade nas curvas e reduz o risco de erro.", 16, COLORS["dim"]))
+	explain.add_child(_label("FINAL: limita a velocidade maxima nas retas.", 16, COLORS["dim"]))
+	explain.add_child(_label("REFRIG: retira calor do motor; superaquecimento reduz a aceleracao.", 16, COLORS["dim"]))
+	explain.add_child(_label("CHUVA: altera a aderencia em piso molhado, mas nao no seco.", 16, COLORS["dim"]))
+	explain.add_child(_label("RISCO: percentual de reducao relativa da chance de erros do piloto.", 16, COLORS["dim"]))
 	var styles := _section(body, "ESTILO DE PILOTAGEM", "Pode ser alterado antes de cada corrida.")
 	var choices := HBoxContainer.new()
 	styles.add_child(choices)
@@ -582,7 +592,7 @@ func _ui_garage_effects(body: VBoxContainer) -> void:
 	else:
 		for combo in combos:
 			combinations.add_child(_label(combo, 18, COLORS["accent"]))
-	var passives_section := _section(body, "CARTAS PASSIVAS", "Acumulam ate 3 copias por habilidade.")
+	var passives_section := _section(body, "CARTAS PASSIVAS", "Acumulo = quantidade da MESMA carta adquirida. Maximo de 3 por habilidade.")
 	var count := 0
 	for data in Cards.CATALOG:
 		if str(data.get("type", "")) != "passive":
@@ -590,7 +600,8 @@ func _ui_garage_effects(body: VBoxContainer) -> void:
 		var copies: int = Cards.stacks(passives, str(data["id"]))
 		if copies > 0:
 			count += 1
-			passives_section.add_child(_label("%s • %d/%d" % [str(data["name"]), copies, Cards.MAX_PASSIVE_STACKS], 18, _rarity_color(str(data["rarity"]))))
+			passives_section.add_child(_label("%s • ACUMULOS %d/%d" % [str(data["name"]), copies, Cards.MAX_PASSIVE_STACKS], 18, _rarity_color(str(data["rarity"]))))
+			passives_section.add_child(_label("BONUS TOTAL: " + Cards.passive_bonus(data, copies), 16, COLORS["accent"]))
 			passives_section.add_child(_label(str(data["desc"]), 16, COLORS["dim"]))
 	if count == 0:
 		passives_section.add_child(_label("Nenhum efeito acumulavel adquirido.", 18, COLORS["dim"]))
@@ -631,7 +642,9 @@ func _ui_rewards(body: VBoxContainer, footer: HBoxContainer) -> void:
 		info.add_child(_label(str(card.get("desc", "")), 18))
 		info.add_child(_label(rarity.to_upper(), 17, _rarity_color(rarity)))
 		if passive:
-			info.add_child(_label("ACUMULO: %d/%d" % [Cards.stacks(passives, str(card.get("id", ""))), Cards.MAX_PASSIVE_STACKS], 16, COLORS["dim"]))
+			var accumulated: int = Cards.stacks(passives, str(card.get("id", "")))
+			info.add_child(_label("ACUMULOS: %d/%d (a mesma carta pode ser escolhida mais de uma vez)" % [accumulated, Cards.MAX_PASSIVE_STACKS], 16, COLORS["dim"]))
+			info.add_child(_label("SE ESCOLHER: " + Cards.passive_bonus(card, accumulated + 1), 16, COLORS["accent"]))
 		var take := _button("ESCOLHER ESTA CARTA", func(): _choose(card))
 		info.add_child(take)
 	if cards.is_empty():

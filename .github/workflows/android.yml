@@ -80,6 +80,9 @@ jobs:
       - name: Verify provisional mobile UI and fixed navigation
         run: godot --headless --path . --script res://tests/ui_test.gd
 
+      - name: Verify pilot descriptions and passive bonuses
+        run: godot --headless --path . --script res://tests/stat_descriptions_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 

@@ -22,6 +22,35 @@ const ADVANCED_LABELS := {
 	"concentracao": "Sob Pressao"
 }
 
+
+# Descricoes exibidas na carreira devem refletir os fatores usados em simulation.gd.
+static func skill_effect(id: String, rank: int) -> String:
+	var n: int = clampi(rank, 0, MAX_SKILL_LEVEL)
+	match id:
+		"curvas":
+			return "Diminui em 6% por nivel o risco relativo de erro nas curvas. Atual: -%d%%." % (6 * n)
+		"correcao":
+			return "Apos erro em curva, preserva mais velocidade (+2,5 pontos percentuais por nivel). Atual: +%.1f p.p." % (2.5 * float(n))
+		"largada":
+			return "Reduz em 8% por nivel o risco relativo de patinar na largada. Atual: -%d%%." % (8 * n)
+		"marchas":
+			return "Reduz em 8% por nivel o risco relativo de troca ruim e preserva +2 pontos de velocidade. Atual: -%d%% risco." % (8 * n)
+		"foco":
+			return "Diminui o risco relativo de TODOS os erros em 4,5% por nivel. Atual: -%.1f%%." % (4.5 * float(n))
+		"recuperacao":
+			return "Apos erros em curva, preserva mais velocidade (+2 pontos percentuais por nivel). Atual: +%d p.p." % (2 * n)
+	return ""
+
+static func advanced_effect(branch: String) -> String:
+	match branch:
+		"controle":
+			return "Apos duas curvas limpas, prepara tracado especial: ate +1,5 p.p. no aproveitamento da velocidade ate a proxima curva."
+		"tecnica":
+			return "Se nao patinar na largada, as DUAS proximas trocas de marcha ficam livres de erros."
+		"concentracao":
+			return "Nos ultimos 20% da corrida, quando estiver ate 30 m atras do rival, aproveita +1,8 p.p. da velocidade permitida, mas aumenta o risco de erro em 22%."
+	return ""
+
 var experience: int = 0
 var skills: Dictionary = {}
 var advanced: Dictionary = {}
