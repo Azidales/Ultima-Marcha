@@ -530,11 +530,22 @@ func _ui_garage(body: VBoxContainer, footer: HBoxContainer) -> void:
 func _ui_garage_summary(body: VBoxContainer) -> void:
 	var overview := _section(body, "HATCH 1.6 • %s" % str(selected_route.get("kind", "normal")).to_upper(), "%s  •  %s" % [str(selected_route.get("track", "")), str(selected_route.get("weather", ""))])
 	var s: Dictionary = _stats()
-	var stats_grid := GridContainer.new()
-	stats_grid.columns = 2
-	overview.add_child(stats_grid)
+	# A full-width vertical list prevents GridContainer's squeezed columns
+	# from wrapping stat labels one letter per line on Android portrait screens.
+	var stats_list := VBoxContainer.new()
+	stats_list.name = "CarStats"
+	stats_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats_list.add_theme_constant_override("separation", 4)
+	overview.add_child(stats_list)
 	for pair in [["ACEL", "accel"], ["ADERENCIA", "grip"], ["FINAL", "top"], ["REFRIG", "cool"]]:
-		stats_grid.add_child(_label("%s: %d%%" % [pair[0], roundi(float(s[pair[1]]) * 100.0)], 18))
+		var stat_name: String = str(pair[0])
+		var key: String = str(pair[1])
+		var stat_label := _label("%s: %d%%" % [stat_name, roundi(float(s[key]) * 100.0)], 18)
+		stat_label.name = "Stat_" + key
+		stat_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		stat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stat_label.custom_minimum_size = Vector2(150, 26)
+		stats_list.add_child(stat_label)
 	overview.add_child(_label("PECAS %d/%d • CARTAS PASSIVAS %d" % [equipped.size(), Cards.SLOTS.size(), passives.size()], 17, COLORS["dim"]))
 	var explain := _section(body, "O QUE CADA ATRIBUTO FAZ")
 	explain.add_child(_label("ACEL: rapidez para ganhar velocidade nas retas e saidas de curva.", 16, COLORS["dim"]))
