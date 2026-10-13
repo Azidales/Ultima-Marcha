@@ -282,7 +282,7 @@ func _equip(card: Dictionary) -> void:
 			break
 	if not owned or str(card.get("slot","")) not in Cards.SLOTS:
 		return
-	equipped[str(card["slot"])] = card
+	equipped[str(card["slot"])] = card.duplicate(true)
 	part_preview.clear()
 	_draw_ui()
 
@@ -332,7 +332,9 @@ func _preview_part(card: Dictionary) -> void:
 
 func _equip_preview() -> void:
 	if not part_preview.is_empty():
-		_equip(part_preview)
+		# Never pass the same dictionary that _equip clears when closing preview.
+		var chosen: Dictionary = part_preview.duplicate(true)
+		_equip(chosen)
 
 func _bar_color(player_bar: bool) -> Color:
 	return Color("33e1d5") if player_bar else Color("fb825c")

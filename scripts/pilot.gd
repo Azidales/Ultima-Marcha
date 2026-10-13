@@ -28,15 +28,15 @@ static func skill_effect(id: String, rank: int) -> String:
 	var n: int = clampi(rank, 0, MAX_SKILL_LEVEL)
 	match id:
 		"curvas":
-			return "Diminui em 6% por nivel o risco relativo de erro nas curvas. Atual: -%d%%." % (6 * n)
+			return "Diminui em 6%% por nivel o risco relativo de erro nas curvas. Atual: -%d%%." % (6 * n)
 		"correcao":
 			return "Apos erro em curva, preserva mais velocidade (+2,5 pontos percentuais por nivel). Atual: +%.1f p.p." % (2.5 * float(n))
 		"largada":
-			return "Reduz em 8% por nivel o risco relativo de patinar na largada. Atual: -%d%%." % (8 * n)
+			return "Reduz em 8%% por nivel o risco relativo de patinar na largada. Atual: -%d%%." % (8 * n)
 		"marchas":
-			return "Reduz em 8% por nivel o risco relativo de troca ruim e preserva +2 pontos de velocidade. Atual: -%d%% risco." % (8 * n)
+			return "Reduz em 8%% por nivel o risco relativo de troca ruim e preserva +2 pontos de velocidade. Atual: -%d%% risco." % (8 * n)
 		"foco":
-			return "Diminui o risco relativo de TODOS os erros em 4,5% por nivel. Atual: -%.1f%%." % (4.5 * float(n))
+			return "Diminui o risco relativo de TODOS os erros em 4,5%% por nivel. Atual: -%.1f%%." % (4.5 * float(n))
 		"recuperacao":
 			return "Apos erros em curva, preserva mais velocidade (+2 pontos percentuais por nivel). Atual: +%d p.p." % (2 * n)
 	return ""
