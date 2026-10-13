@@ -40,8 +40,12 @@ func _run() -> void:
 		return
 	game._new_run()
 	game._pick_route(str(game.campaign.available()[0]["id"]))
-	if not _contains(game.layer, "O QUE CADA ATRIBUTO FAZ") or not _contains(game.layer, "REFRIG:"):
-		_fail("garage glossary invisible")
+	if _contains(game.layer, "GUIA RAPIDO"):
+		_fail("garage glossary should be collapsed initially")
+		return
+	game._toggle_garage_help()
+	if not _contains(game.layer, "GUIA RAPIDO") or not _contains(game.layer, "REFRIG."):
+		_fail("garage glossary not available on request")
 		return
 	game.passives.append(telemetry.duplicate(true))
 	game.passives.append(telemetry.duplicate(true))

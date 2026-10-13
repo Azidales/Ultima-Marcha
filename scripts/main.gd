@@ -5,6 +5,7 @@ const Campaign = preload("res://scripts/campaign.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Pilot = preload("res://scripts/pilot.gd")
 const Framing = preload("res://scripts/camera_framing.gd")
+const Confrontation = preload("res://scripts/confrontation.gd")
 const COLORS = {"bg":Color("111927"),"panel":Color("19283b"),"accent":Color("52dfd0"),"white":Color("f5f7fb"),"dim":Color("b1c3d3")}
 var sim = Race.new()
 var campaign = Campaign.new()
@@ -18,6 +19,8 @@ var active_bulletin := ""
 var reward_picks_left := 0
 var screen := "menu"
 var garage_tab := "resumo"
+var garage_help_visible := false
+var part_preview: Dictionary = {}
 var map_history_visible := false
 var result_log_visible := false
 var equipped: Dictionary = {}
@@ -150,6 +153,8 @@ func _new_run() -> void:
 		return
 	pilot.start_run()
 	garage_tab = "resumo"
+	part_preview.clear()
+	garage_help_visible = false
 	map_history_visible = false
 	stage = 1
 	equipped.clear()
@@ -164,6 +169,7 @@ func _pick_route(id: String) -> void:
 	for option in campaign.available():
 		if str(option["id"]) == id:
 			selected_route = option.duplicate(true)
+			part_preview.clear()
 			_set_screen("garage")
 			return
 
@@ -263,6 +269,7 @@ func _choose(card: Dictionary) -> void:
 
 func _unequip(slot: String) -> void:
 	equipped.erase(slot)
+	part_preview.clear()
 	_draw_ui()
 
 func _equip(card: Dictionary) -> void:
@@ -276,6 +283,7 @@ func _equip(card: Dictionary) -> void:
 	if not owned or str(card.get("slot","")) not in Cards.SLOTS:
 		return
 	equipped[str(card["slot"])] = card
+	part_preview.clear()
 	_draw_ui()
 
 func _set_screen(name: String) -> void:
@@ -302,7 +310,102 @@ func _button(s: String, fn: Callable) -> Button:
 func _set_garage_tab(tab: String) -> void:
 	if screen == "garage" and tab in ["resumo", "pecas", "efeitos"]:
 		garage_tab = tab
+		part_preview.clear()
 		_draw_ui()
+
+func _toggle_garage_help() -> void:
+	garage_help_visible = not garage_help_visible
+	_draw_ui()
+
+func _preview_part(card: Dictionary) -> void:
+	if screen != "garage" or str(card.get("type", "")) != "part":
+		return
+	var owned := false
+	for part in inventory:
+		if str(part.get("id", "")) == str(card.get("id", "")):
+			owned = true
+			break
+	if not owned:
+		return
+	part_preview = card.duplicate(true)
+	_draw_ui()
+
+func _equip_preview() -> void:
+	if not part_preview.is_empty():
+		_equip(part_preview)
+
+func _bar_color(player_bar: bool) -> Color:
+	return Color("33e1d5") if player_bar else Color("fb825c")
+
+func _metric_meter(parent: VBoxContainer, side: String, value: float, maximum: float, own: bool) -> void:
+	var line := HBoxContainer.new()
+	line.name = "PlayerLine" if own else "RivalLine"
+	line.add_theme_constant_override("separation", 8)
+	parent.add_child(line)
+	var name_label := _label(side, 18, _bar_color(own))
+	name_label.custom_minimum_size.x = 73
+	name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	line.add_child(name_label)
+	var gauge := ProgressBar.new()
+	gauge.name = "PlayerBar" if own else "RivalBar"
+	gauge.min_value = 0.0
+	gauge.max_value = maximum
+	gauge.value = clampf(value, 0.0, maximum)
+	gauge.show_percentage = false
+	gauge.custom_minimum_size = Vector2(90, 17)
+	gauge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color("253545")
+	track.set_corner_radius_all(7)
+	gauge.add_theme_stylebox_override("background", track)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = _bar_color(own)
+	fill.set_corner_radius_all(7)
+	gauge.add_theme_stylebox_override("fill", fill)
+	line.add_child(gauge)
+	var percentage := _label("%.1f%%" % value, 18, COLORS["white"])
+	percentage.name = "PlayerValue" if own else "RivalValue"
+	percentage.custom_minimum_size.x = 67
+	percentage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	percentage.autowrap_mode = TextServer.AUTOWRAP_OFF
+	line.add_child(percentage)
+
+func _metric_card(parent: VBoxContainer, stat: Dictionary, preview: bool) -> void:
+	var container := PanelContainer.new()
+	container.name = "Metric_" + str(stat.get("key", "metric"))
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var flat := StyleBoxFlat.new()
+	flat.bg_color = Color("142737")
+	flat.set_corner_radius_all(12)
+	flat.set_content_margin_all(11)
+	container.add_theme_stylebox_override("panel", flat)
+	parent.add_child(container)
+	var vertical := VBoxContainer.new()
+	vertical.add_theme_constant_override("separation", 5)
+	container.add_child(vertical)
+	var headline := HBoxContainer.new()
+	vertical.add_child(headline)
+	var title := _label(str(stat["title"]), 21, COLORS["white"])
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	headline.add_child(title)
+	var score: int = Confrontation.advantage(stat)
+	var status: String = "VANTAGEM" if score > 0 else "ATENCAO" if score < 0 else "EQUILIBRADO"
+	var score_label := _label(status, 17, Color("76e9b5") if score > 0 else Color("ffae7d") if score < 0 else COLORS["dim"])
+	headline.add_child(score_label)
+	var maximum: float = maxf(22.0, ceili(maxf(float(stat["player"]), float(stat["rival"])) / 25.0) * 25.0)
+	if str(stat["key"]) == "risk":
+		maximum = maxf(20.0, ceilf(maxf(float(stat["player"]), float(stat["rival"])) / 5.0) * 5.0)
+	_metric_meter(vertical, "PREVIA" if preview else "VOCE", float(stat["player"]), maximum, true)
+	_metric_meter(vertical, "RIVAL", float(stat["rival"]), maximum, false)
+
+func _compare_cars(body: VBoxContainer, player_stats: Dictionary, is_preview: bool = false) -> void:
+	var rows: Array[Dictionary] = Confrontation.comparison(player_stats, stage, selected_route, pilot.snapshot(pilot_style))
+	var section := _section(body, "COMPARATIVO • VOCE X RIVAL" if not is_preview else "SE EQUIPAR • NOVO CONFRONTO", str(selected_route.get("track", "")) + "  •  " + str(selected_route.get("weather", "")))
+	section.add_child(_label(Confrontation.summary(rows), 20, COLORS["accent"]))
+	for stat in rows:
+		_metric_card(section, stat, is_preview)
+	var note := _label("SAIDA / CURVA / RETA: maior e melhor  •  DERRAPAGEM: menor e melhor.", 18, COLORS["dim"])
+	section.add_child(note)
 
 func _toggle_history() -> void:
 	map_history_visible = not map_history_visible
@@ -531,73 +634,71 @@ func _ui_garage(body: VBoxContainer, footer: HBoxContainer) -> void:
 	_action(footer, "LARGAR!", _race_start, true)
 
 func _ui_garage_summary(body: VBoxContainer) -> void:
-	var overview := _section(body, "HATCH 1.6 • %s" % str(selected_route.get("kind", "normal")).to_upper(), "%s  •  %s" % [str(selected_route.get("track", "")), str(selected_route.get("weather", ""))])
-	var s: Dictionary = _stats()
-	# A full-width vertical list prevents GridContainer's squeezed columns
-	# from wrapping stat labels one letter per line on Android portrait screens.
-	var stats_list := VBoxContainer.new()
-	stats_list.name = "CarStats"
-	stats_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stats_list.add_theme_constant_override("separation", 4)
-	overview.add_child(stats_list)
-	for pair in [["ACEL", "accel"], ["ADERENCIA", "grip"], ["FINAL", "top"], ["REFRIG", "cool"]]:
-		var stat_name: String = str(pair[0])
-		var key: String = str(pair[1])
-		var stat_label := _label("%s: %d%%" % [stat_name, roundi(float(s[key]) * 100.0)], 18)
-		stat_label.name = "Stat_" + key
-		stat_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-		stat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stat_label.custom_minimum_size = Vector2(150, 26)
-		stats_list.add_child(stat_label)
-	overview.add_child(_label("PECAS %d/%d • CARTAS PASSIVAS %d" % [equipped.size(), Cards.SLOTS.size(), passives.size()], 17, COLORS["dim"]))
-	var explain := _section(body, "O QUE CADA ATRIBUTO FAZ")
-	explain.add_child(_label("ACEL: rapidez para ganhar velocidade nas retas e saidas de curva.", 16, COLORS["dim"]))
-	explain.add_child(_label("ADERENCIA: permite maior velocidade nas curvas e reduz o risco de erro.", 16, COLORS["dim"]))
-	explain.add_child(_label("FINAL: limita a velocidade maxima nas retas.", 16, COLORS["dim"]))
-	explain.add_child(_label("REFRIG: retira calor do motor; superaquecimento reduz a aceleracao.", 16, COLORS["dim"]))
-	explain.add_child(_label("CHUVA: altera a aderencia em piso molhado, mas nao no seco.", 16, COLORS["dim"]))
-	explain.add_child(_label("RISCO: percentual de reducao relativa da chance de erros do piloto.", 16, COLORS["dim"]))
-	var styles := _section(body, "ESTILO DE PILOTAGEM", "Pode ser alterado antes de cada corrida.")
+	var intro := _section(body, "HATCH 1.6  VS  " + str(selected_route.get("rival", "RIVAL")), "ETAPA %d • %s  •  %s" % [stage, str(selected_route.get("track", "")), str(selected_route.get("weather", ""))])
+	var kind: String = str(selected_route.get("kind", "normal")).to_upper()
+	intro.add_child(_label(kind + "  •  " + str(equipped.size()) + "/6 PECAS EQUIPADAS", 19, _rarity_color("epica") if kind=="BOSS" else COLORS["accent"]))
+	_compare_cars(body, _stats())
+	var chips: Array[String] = Cards.synergies(equipped)
+	var build := _section(body, "SEU BUILD", "%d pecas  •  %d efeitos passivos" % [equipped.size(), passives.size()])
+	if chips.is_empty():
+		build.add_child(_label("Monte combinacoes na aba PECAS para ganhar bonus.", 18, COLORS["dim"]))
+	else:
+		for synergy in chips:
+			build.add_child(_label("✦  " + synergy, 20, Color("d6b5ff")))
+	var styles := _section(body, "PILOTAGEM", "Estilo altera o ritmo e o risco.")
 	var choices := HBoxContainer.new()
 	styles.add_child(choices)
-	for name in ["conservador", "equilibrado", "agressivo"]:
-		var value: String = str(name)
-		var b := _button(("✓ " if pilot_style == value else "") + value.to_upper(), func(): _set_pilot_style(value))
-		b.custom_minimum_size.y = 54
-		b.add_theme_font_size_override("font_size", 18)
-		choices.add_child(b)
-	var combos: Array[String] = Cards.synergies(equipped)
-	var features := _section(body, "COMBINACOES • %d" % combos.size())
-	if combos.is_empty():
-		features.add_child(_label("Equipe Turbo + Radiador, Turbo + Cambio ou Pneus + Suspensao.", 17, COLORS["dim"]))
-	else:
-		for item in combos:
-			features.add_child(_label(item, 18))
-	if str(selected_route.get("weather", "")) == "molhada":
-		features.add_child(_label("ADERENCIA NA CHUVA: %+d%%" % roundi(float(s["wet_grip"]) * 100.0), 17))
-	features.add_child(_label("REDUCAO DE RISCO: %d%%" % roundi(float(s["risk_reduction"]) * 100.0), 17))
+	for value in ["conservador", "equilibrado", "agressivo"]:
+		var chosen: String = str(value)
+		var text_style: String = "SEGURO" if chosen == "conservador" else "EQUIL." if chosen == "equilibrado" else "ATAQUE"
+		var button := _button(("✓ " if pilot_style == chosen else "") + text_style, func(): _set_pilot_style(chosen))
+		button.custom_minimum_size.y = 52
+		button.add_theme_font_size_override("font_size", 19)
+		choices.add_child(button)
+	var helper := _button("O QUE SIGNIFICAM OS INDICADORES? " + ("−" if garage_help_visible else "+"), _toggle_garage_help)
+	helper.add_theme_font_size_override("font_size", 18)
+	body.add_child(helper)
+	if garage_help_visible:
+		var glossary := _section(body, "GUIA RAPIDO")
+		glossary.add_child(_label("SAIDA: aceleracao na largada e nas retomadas.", 19, COLORS["dim"]))
+		glossary.add_child(_label("CURVA: velocidade permitida nas curvas considerando a chuva.", 19, COLORS["dim"]))
+		glossary.add_child(_label("RETA: limite de velocidade fora das curvas.", 19, COLORS["dim"]))
+		glossary.add_child(_label("DERRAPAGEM: risco aproximado de erro em curva media; menor e melhor.", 19, COLORS["dim"]))
+		glossary.add_child(_label("REFRIG.: evita perda de aceleracao por aquecimento. Sem comparativo com rival nesta versao.", 19, COLORS["dim"]))
 
 func _ui_garage_parts(body: VBoxContainer) -> void:
-	var summary := _section(body, "TROCA LIVRE", "Retirar uma peca nao a descarta. Apenas uma peca por espaco.")
-	summary.add_child(_label("%d PECAS NO INVENTARIO" % inventory.size(), 18))
+	var help := _section(body, "OFICINA • %d PECAS" % inventory.size(), "Toque em COMPARAR antes de substituir. A peca antiga fica guardada.")
+	if not part_preview.is_empty():
+		var old: Array[Dictionary] = Confrontation.comparison(_stats(), stage, selected_route, pilot.snapshot(pilot_style))
+		var future_stats: Dictionary = Confrontation.preview_stats(equipped, passives, part_preview)
+		var future: Array[Dictionary] = Confrontation.comparison(future_stats, stage, selected_route, pilot.snapshot(pilot_style))
+		var preview := _section(body, "TESTE: " + str(part_preview.get("name", "")), Confrontation.preview_delta(old, future))
+		var equip_btn := _button("EQUIPAR ESTA PECA", _equip_preview)
+		preview.add_child(equip_btn)
+		_compare_cars(body, future_stats, true)
+	else:
+		help.add_child(_label("As barras de desempenho aparecerao aqui quando escolher uma peca.", 19, COLORS["accent"]))
 	for slot in Cards.SLOTS:
 		var equip_id: String = str(slot)
 		var selected: Dictionary = equipped.get(equip_id, {})
-		var pane := _section(body, equip_id.to_upper(), "Equipado: %s" % str(selected.get("name", "NENHUM")))
-		if not selected.is_empty():
-			pane.add_child(_button("RETIRAR", func(): _unequip(equip_id)))
-		var any_owned := false
-		for card in inventory:
-			if str(card.get("slot", "")) != equip_id:
+		var pane := _section(body, equip_id.to_upper(), "ATUAL: " + str(selected.get("name", "VAZIO")))
+		var available := 0
+		for owned_card in inventory:
+			if str(owned_card.get("slot", "")) != equip_id:
 				continue
-			any_owned = true
-			var part: Dictionary = card.duplicate(true)
-			var is_current := str(selected.get("id", "")) == str(part.get("id", ""))
-			var choose := _button(("EQUIPADA: " if is_current else "EQUIPAR: ") + str(part["name"]), func(): _equip(part))
-			choose.disabled = is_current
-			pane.add_child(choose)
-		if not any_owned:
-			pane.add_child(_label("Sem pecas no inventario", 17, COLORS["dim"]))
+			available += 1
+			var part: Dictionary = owned_card.duplicate(true)
+			if str(part.get("id", "")) == str(selected.get("id", "")):
+				continue
+			var button := _button("COMPARAR • " + str(part.get("name", "")), func(): _preview_part(part))
+			button.add_theme_font_size_override("font_size", 19)
+			pane.add_child(button)
+		if not selected.is_empty():
+			var remove_button := _button("RETIRAR PECA", func(): _unequip(equip_id))
+			remove_button.add_theme_font_size_override("font_size", 18)
+			pane.add_child(remove_button)
+		elif available == 0:
+			pane.add_child(_label("Nenhuma peca obtida neste espaco.", 19, COLORS["dim"]))
 
 func _ui_garage_effects(body: VBoxContainer) -> void:
 	var combinations := _section(body, "COMBINACOES ATIVAS")

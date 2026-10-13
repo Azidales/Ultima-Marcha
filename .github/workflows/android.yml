@@ -92,6 +92,12 @@ jobs:
       - name: Verify mobile controls are large and close to content
         run: godot --headless --path . --script res://tests/touch_layout_test.gd
 
+      - name: Verify factual player vs opponent comparisons
+        run: godot --headless --path . --script res://tests/confrontation_test.gd
+
+      - name: Verify garage stat bars are interactive and accurate
+        run: godot --headless --path . --script res://tests/garage_visual_test.gd
+
       - name: Verify deterministic race
         run: godot --headless --path . --script res://tests/smoke_test.gd
 
