@@ -342,10 +342,10 @@ func _bar_color(player_bar: bool) -> Color:
 func _metric_meter(parent: VBoxContainer, side: String, value: float, maximum: float, own: bool) -> void:
 	var line := HBoxContainer.new()
 	line.name = "PlayerLine" if own else "RivalLine"
-	line.add_theme_constant_override("separation", 8)
+	line.add_theme_constant_override("separation", 7)
 	parent.add_child(line)
 	var name_label := _label(side, 18, _bar_color(own))
-	name_label.custom_minimum_size.x = 73
+	name_label.custom_minimum_size.x = 65
 	name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	line.add_child(name_label)
 	var gauge := ProgressBar.new()
@@ -354,7 +354,7 @@ func _metric_meter(parent: VBoxContainer, side: String, value: float, maximum: f
 	gauge.max_value = maximum
 	gauge.value = clampf(value, 0.0, maximum)
 	gauge.show_percentage = false
-	gauge.custom_minimum_size = Vector2(90, 17)
+	gauge.custom_minimum_size = Vector2(85, 14)
 	gauge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var track := StyleBoxFlat.new()
 	track.bg_color = Color("253545")
@@ -367,7 +367,7 @@ func _metric_meter(parent: VBoxContainer, side: String, value: float, maximum: f
 	line.add_child(gauge)
 	var percentage := _label("%.1f%%" % value, 18, COLORS["white"])
 	percentage.name = "PlayerValue" if own else "RivalValue"
-	percentage.custom_minimum_size.x = 67
+	percentage.custom_minimum_size.x = 70
 	percentage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	percentage.autowrap_mode = TextServer.AUTOWRAP_OFF
 	line.add_child(percentage)
@@ -379,20 +379,29 @@ func _metric_card(parent: VBoxContainer, stat: Dictionary, preview: bool) -> voi
 	var flat := StyleBoxFlat.new()
 	flat.bg_color = Color("142737")
 	flat.set_corner_radius_all(12)
-	flat.set_content_margin_all(11)
+	flat.set_content_margin_all(8)
 	container.add_theme_stylebox_override("panel", flat)
 	parent.add_child(container)
 	var vertical := VBoxContainer.new()
-	vertical.add_theme_constant_override("separation", 5)
+	vertical.add_theme_constant_override("separation", 3)
 	container.add_child(vertical)
 	var headline := HBoxContainer.new()
 	vertical.add_child(headline)
-	var title := _label(str(stat["title"]), 21, COLORS["white"])
+	var title := _label(str(stat["title"]), 20, COLORS["white"])
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.autowrap_mode = TextServer.AUTOWRAP_OFF
+	title.clip_text = true
 	headline.add_child(title)
 	var score: int = Confrontation.advantage(stat)
 	var status: String = "VANTAGEM" if score > 0 else "ATENCAO" if score < 0 else "EQUILIBRADO"
-	var score_label := _label(status, 17, Color("76e9b5") if score > 0 else Color("ffae7d") if score < 0 else COLORS["dim"])
+	var score_label := _label(status, 18, Color("76e9b5") if score > 0 else Color("ffae7d") if score < 0 else COLORS["dim"])
+	score_label.name = "Status"
+	# The previous SMART wrap collapsed the status into one character per row.
+	# A reserved horizontal width prevents it from stretching every stat card.
+	score_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	score_label.custom_minimum_size = Vector2(142, 25)
+	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	score_label.clip_text = true
 	headline.add_child(score_label)
 	var maximum: float = maxf(22.0, ceili(maxf(float(stat["player"]), float(stat["rival"])) / 25.0) * 25.0)
 	if str(stat["key"]) == "risk":
@@ -402,12 +411,11 @@ func _metric_card(parent: VBoxContainer, stat: Dictionary, preview: bool) -> voi
 
 func _compare_cars(body: VBoxContainer, player_stats: Dictionary, is_preview: bool = false) -> void:
 	var rows: Array[Dictionary] = Confrontation.comparison(player_stats, stage, selected_route, pilot.snapshot(pilot_style))
-	var section := _section(body, "COMPARATIVO • VOCE X RIVAL" if not is_preview else "SE EQUIPAR • NOVO CONFRONTO", str(selected_route.get("track", "")) + "  •  " + str(selected_route.get("weather", "")))
+	var section := _section(body, "VOCE  ×  RIVAL" if not is_preview else "PREVIA  ×  RIVAL")
 	section.add_child(_label(Confrontation.summary(rows), 20, COLORS["accent"]))
 	for stat in rows:
 		_metric_card(section, stat, is_preview)
-	var note := _label("SAIDA / CURVA / RETA: maior e melhor  •  DERRAPAGEM: menor e melhor.", 18, COLORS["dim"])
-	section.add_child(note)
+	# Detailed metric explanations are available in the expandable help below.
 
 func _toggle_history() -> void:
 	map_history_visible = not map_history_visible
@@ -537,11 +545,14 @@ func _draw_ui() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# Hide the thick scroll thumb without disabling touch/drag scrolling.
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	scroll.scroll_deadzone = 8
 	shell.add_child(scroll)
 	var body := VBoxContainer.new()
 	body.name = "ScreenBody"
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 10)
+	body.add_theme_constant_override("separation", 7)
 	scroll.add_child(body)
 	match screen:
 		"menu":
